@@ -1,0 +1,36 @@
+{
+  "description": "Configuration for SSMS EnvTabs tab grouping (rename) based on the visible tab hover text / frame caption.",
+  "version": "1.0.0",
+  "notes": [
+    "Match tabs by server/database from SqlScriptEditorControl.Connection.",
+    "Replace placeholders like SERVERNAME/DATABASENAME with your SSMS connection values.",
+    "You can use % wildcards in server/database values (SQL LIKE semantics)."
+  ],
+  "groups": [
+    {
+      "groupName": "QA",
+      "server": "SERVERNAME",
+      "database": "DATABASENAME",
+      "priority": 1,
+      "colorIndex": 2
+    },
+    {
+      "groupName": "Prod",
+      "server": "PROD_SERVER",
+      "database": "PROD_DATABASE",
+      "priority": 2,
+      "colorIndex": 4
+    },
+    {
+      "groupName": "Dev",
+      "server": "DEV_SERVER",
+      "database": "DEV_DATABASE",
+      "priority": 3,
+      "colorIndex": 3
+    }
+  ],
+  "settings": {
+    "enableAutoRename": true,
+    "enableAutoColor": true
+  }
+}
