@@ -40,5 +40,8 @@ namespace SSMS_EnvTabs
 
         [DataMember(Name = "colorIndex", IsRequired = false)]
         public int ColorIndex { get; set; } = 0;
+
+        [DataMember(Name = "salt", IsRequired = false)]
+        public string Salt { get; set; }
     }
 }

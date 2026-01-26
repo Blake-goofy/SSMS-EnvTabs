@@ -27,6 +27,7 @@ namespace SSMS_EnvTabs
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [ProvideAutoLoad(UIContextGuids.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(UIContextGuids.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
+    [ProvideMenuResource("Menus.ctmenu", 1)]
     [Guid(SSMS_EnvTabsPackage.PackageGuidString)]
     public sealed class SSMS_EnvTabsPackage : AsyncPackage
     {
@@ -34,6 +35,13 @@ namespace SSMS_EnvTabs
         /// SSMS_EnvTabsPackage GUID string.
         /// </summary>
         public const string PackageGuidString = "a155434a-a5a5-4d8f-b211-b26305addff6";
+
+        public const string PackageCmdSetGuidString = "2E302824-2C62-4275-801B-55919612C26D";
+        public static readonly Guid PackageCmdSetGuid = new Guid(PackageCmdSetGuidString);
+        
+        public const int cmdidCalibrate = 0x0100;
+        public const int cmdidGenerateSalt = 0x0101;
+        public const int cmdidCaptureData = 0x0102;
 
         #region Package Members
 
@@ -55,6 +63,34 @@ namespace SSMS_EnvTabs
             EnvTabsLog.Info("SSMS EnvTabs package initialized.");
             TabGroupConfigLoader.EnsureDefaultConfigExists();
             rdtEventManager = await RdtEventManager.CreateAndStartAsync(this, cancellationToken);
+            
+            // Uncomment to dump commands for debugging "Set Tab Color" logic
+            // await DumpCommandsAsync();
+            
+            // Initialize research commands
+            await ColorResearchCommands.InitializeAsync(this);
+        }
+
+        private async Task DumpCommandsAsync()
+        {
+            await this.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var dte = await this.GetServiceAsync(typeof(EnvDTE.DTE)) as EnvDTE.DTE;
+            if (dte != null)
+            {
+                foreach (EnvDTE.Command cmd in dte.Commands)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(cmd.Name) && 
+                           (cmd.Name.IndexOf("color", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            cmd.Name.IndexOf("tab", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            EnvTabsLog.Info($"Command Found: {cmd.Name} (ID: {cmd.ID}, Guid: {cmd.Guid})");
+                        }
+                    }
+                    catch { }
+                }
+            }
         }
 
         #endregion

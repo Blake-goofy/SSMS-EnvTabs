@@ -70,7 +70,20 @@ namespace SSMS_EnvTabs
                     map[group] = set;
                 }
 
-                set.Add(doc.Moniker);
+                // Use only the filename for the regex to avoid path dependency issues
+                // and to support files moving between folders while keeping color.
+                try 
+                {
+                    string fileName = Path.GetFileName(doc.Moniker);
+                    if (!string.IsNullOrEmpty(fileName))
+                    {
+                        set.Add(fileName);
+                    }
+                }
+                catch
+                {
+                    // If path is invalid, skip
+                }
             }
 
             return map;
@@ -90,14 +103,14 @@ namespace SSMS_EnvTabs
             foreach (var rule in rules.OrderBy(r => r.Priority).ThenBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase))
             {
                 groupToPaths.TryGetValue(rule.GroupName, out var paths);
-                lines.Add(BuildRegexLine(paths));
+                lines.Add(BuildResolvedRegexLine(paths, rule));
             }
 
             lines.Add(EndMarker);
             return lines;
         }
 
-        private static string BuildRegexLine(SortedSet<string> paths)
+        private static string BuildResolvedRegexLine(SortedSet<string> paths, TabRuleMatcher.CompiledRule rule)
         {
             if (paths == null || paths.Count == 0)
             {
@@ -105,7 +118,37 @@ namespace SSMS_EnvTabs
             }
 
             var escaped = paths.Select(Regex.Escape);
-            return $"^(?:{string.Join("|", escaped)})$";
+            // Match filepath ending with one of the filenames.
+            string baseRegex = $"(?:^|[\\\\/])(?:{string.Join("|", escaped)})$";
+
+            // If the rule specifically asks for a specific ColorIndex (1-15), solve for salt
+            // Note: 0 usually means "no preference" or default
+            string salt = rule.Salt;
+            if (rule.ColorIndex > 0)
+            {
+                // Attempt to see if current salt (if any) already produces the right color
+                string currentFull = baseRegex + (!string.IsNullOrWhiteSpace(salt) ? $"(?#salt:{salt})" : "");
+                int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(currentFull);
+                int currentColor = Math.Abs(currentHash) % 16;
+
+                if (currentColor != rule.ColorIndex)
+                {
+                    // Need to find a new salt
+                    string newSalt = TabGroupColorSolver.Solve(baseRegex, rule.ColorIndex);
+                    if (newSalt != null)
+                    {
+                        salt = newSalt;
+                    }
+                }
+            }
+
+            string finalRegex = baseRegex;
+            if (!string.IsNullOrWhiteSpace(salt)) 
+            {
+                finalRegex += $"(?#salt:{salt})";
+            }
+            
+            return finalRegex;
         }
 
         private static string ReplaceOrAppendBlock(string existing, List<string> generatedLines)

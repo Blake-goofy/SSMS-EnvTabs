@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Commands package="guidSSMS_EnvTabsPackage">
+    <Groups>
+      <Group guid="guidSSMS_EnvTabsCmdSet" id="MyMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <!--
+      <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidCalibrate" priority="0x0100" type="Button">
+        <Parent guid="guidSSMS_EnvTabsCmdSet" id="MyMenuGroup" />
+        <Strings>
+          <ButtonText>EnvTabs: Calibrate Research</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidGenerateSalt" priority="0x0101" type="Button">
+        <Parent guid="guidSSMS_EnvTabsCmdSet" id="MyMenuGroup" />
+        <Strings>
+          <ButtonText>EnvTabs: Generate Salt</ButtonText>
+        </Strings>
+      </Button>
+      -->
+      <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidCaptureData" priority="0x0102" type="Button">
+        <Parent guid="guidSSMS_EnvTabsCmdSet" id="MyMenuGroup" />
+        <Strings>
+          <ButtonText>EnvTabs: Capture Data</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidSSMS_EnvTabsPackage" value="{a155434a-a5a5-4d8f-b211-b26305addff6}" />
+
+    <GuidSymbol name="guidSSMS_EnvTabsCmdSet" value="{2E302824-2C62-4275-801B-55919612C26D}">
+      <IDSymbol name="MyMenuGroup" value="0x1020" />
+      <IDSymbol name="cmdidCalibrate" value="0x0100" />
+      <IDSymbol name="cmdidGenerateSalt" value="0x0101" />
+      <IDSymbol name="cmdidCaptureData" value="0x0102" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

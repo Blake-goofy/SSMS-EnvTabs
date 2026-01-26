@@ -481,7 +481,7 @@ namespace SSMS_EnvTabs
 
             renameRetryCounts[docCookie] = 0;
 
-            package.JoinableTaskFactory.RunAsync(async () =>
+            _ = package.JoinableTaskFactory.RunAsync(async () =>
             {
                 for (int i = 0; i < RenameRetryCount; i++)
                 {
@@ -669,7 +669,24 @@ namespace SSMS_EnvTabs
         public int OnAfterDocumentWindowHide(uint docCookie, IVsWindowFrame pFrame) => VSConstants.S_OK;
         public int OnAfterSave(uint docCookie) => VSConstants.S_OK;
         public int OnBeforeSave(uint docCookie) => VSConstants.S_OK;
-        public int OnAfterAttributeChange(uint docCookie, uint grfAttribs) => VSConstants.S_OK;
+        public int OnAfterAttributeChange(uint docCookie, uint grfAttribs)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            // When connection changes (e.g. database dropdown), SSMS might not fire a full window show/hide,
+            // but it may update attributes or the window caption. We check here to catch those cases.
+            string moniker = TryGetMonikerFromCookie(docCookie);
+            if (!string.IsNullOrWhiteSpace(moniker))
+            {
+                IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
+                if (frame != null)
+                {
+                    HandlePotentialChange(docCookie, frame, reason: "AttributeChange");
+                }
+            }
+
+            return VSConstants.S_OK;
+        }
         public int OnBeforeDocumentWindowShow(uint docCookie, int fFirstShow, IVsWindowFrame pFrame) => VSConstants.S_OK;
 
         // --- Selection events ---

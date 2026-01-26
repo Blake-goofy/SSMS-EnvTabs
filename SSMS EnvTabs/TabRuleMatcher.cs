@@ -11,13 +11,17 @@ namespace SSMS_EnvTabs
         {
             public string GroupName { get; }
             public int Priority { get; }
+            public int ColorIndex { get; }
+            public string Salt { get; }
             public string Server { get; }
             public string Database { get; }
 
-            public CompiledRule(string groupName, int priority, string server, string database)
+            public CompiledRule(string groupName, int priority, int colorIndex, string salt, string server, string database)
             {
                 GroupName = groupName;
                 Priority = priority;
+                ColorIndex = colorIndex;
+                Salt = salt;
                 Server = server;
                 Database = database;
             }
@@ -46,9 +50,9 @@ namespace SSMS_EnvTabs
                     continue;
                 }
 
-                rules.Add(new CompiledRule(rule.GroupName.Trim(), rule.Priority, server, database));
+                rules.Add(new CompiledRule(rule.GroupName.Trim(), rule.Priority, rule.ColorIndex, rule.Salt, server, database));
             }
-
+            
             return rules
                 .OrderBy(r => r.Priority)
                 .ThenBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase)
