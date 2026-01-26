@@ -6,15 +6,15 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 ![.NET Framework](https://img.shields.io/badge/.NET-4.7.2%2B-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-## ✨ Key Features
+## Key Features
 
-- 🏷️ **Smart Tab Renaming** - Automatically prefix query tabs with environment names (e.g., "Prod-1", "QA-2")
-- 🎨 **Color-Coded Tabs** - 16 distinct colors to visually separate different environments
-- ⚙️ **Flexible Rules** - Pattern matching with wildcards for server and database names
-- 🚀 **Auto-Configuration** - Automatically create rules for new connections
-- 📊 **Priority-Based** - Control which rules match first with priority ordering
+- **Smart Tab Renaming** - Automatically prefix query tabs with environment names (e.g., "Prod-1", "QA-2")
+- **Color-Coded Tabs** - 16 distinct colors to visually separate different environments
+- **Flexible Rules** - Pattern matching with wildcards for server and database names
+- **Auto-Configuration** - Automatically create rules for new connections
+- **Priority-Based** - Control which rules match first with priority ordering
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -50,7 +50,7 @@ Example configuration:
 }
 ```
 
-## 📚 Documentation
+## Documentation
 
 For detailed documentation, please visit the [Wiki](wiki/):
 
@@ -61,7 +61,7 @@ For detailed documentation, please visit the [Wiki](wiki/):
 - **[Troubleshooting](wiki/Troubleshooting.md)** - Common issues and solutions
 - **[Tips & Best Practices](wiki/Tips-and-Best-Practices.md)** - Optimize your workflow
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
 
@@ -74,19 +74,19 @@ cd SSMS-EnvTabs
 # Build solution (requires Visual Studio SDK)
 ```
 
-## 📄 License
+## License
 
 [Add license information here]
 
-## 💬 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/Blake-goofy/SSMS-EnvTabs/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/Blake-goofy/SSMS-EnvTabs/discussions)
 
-## 👤 Author
+## Author
 
 **Blake Becker**
 
 ---
 
-⭐ If you find this extension helpful, please consider giving it a star!
+If you find this extension helpful, please consider giving it a star!
