@@ -4,4 +4,4 @@ dev
 bin/
 obj/
 *.user
-wiki
+wiki/
