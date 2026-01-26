@@ -4,18 +4,18 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 
 ## Features
 
-- **Automatic Tab Renaming**: Query tabs are renamed with custom prefixes based on their connection (e.g., "Prod-1", "QA-2")
-- **Color-Coded Tabs**: Tabs are automatically colored based on connection properties, making it easy to distinguish between environments at a glance
-- **Flexible Configuration**: Define custom rules using server/database patterns with wildcard support
-- **Priority-Based Matching**: Rules are evaluated in priority order for precise control
-- **Auto-Configuration**: Optionally create rules automatically when connecting to new servers/databases
-- **16 Color Options**: Choose from 16 distinct colors to organize your workspace
+- **Automatic Tab Renaming**: Query tabs are renamed with custom prefixes based on their connection (e.g., "Prod-1", "QA-2").
+- **Color-Coded Tabs**: Tabs are automatically colored based on connection properties, making it easy to distinguish between environments at a glance.
+- **Flexible Configuration**: Define custom rules using server/database patterns with wildcard support.
+- **Priority-Based Matching**: Rules are evaluated in priority order for precise control.
+- **Auto-Configuration**: Optionally create rules automatically when connecting to new servers/databases.
+- **16 Color Options**: Choose from 16 distinct colors to organize your workspace.
 
 ## Installation
 
 ### Prerequisites
 
-- **SQL Server Management Studio (SSMS)** version 17.0 or later
+- **SQL Server Management Studio (SSMS)** version 22.0 or later
 - **Microsoft .NET Framework** 4.7.2 or higher
 
 ### Installing the Extension
@@ -232,7 +232,7 @@ If the configuration file is missing:
 
 ### Extension Not Loading
 
-- **Check SSMS Version**: Requires SSMS 17.0 or later
+- **Check SSMS Version**: Requires SSMS 22.0 or later
 - **Check .NET Framework**: Requires .NET Framework 4.7.2 or higher
 - **Reinstall the Extension**: Uninstall via **Tools** → **Extensions and Updates**, then reinstall the `.vsix` file
 
@@ -290,7 +290,3 @@ For issues, feature requests, or questions:
 ## Credits
 
 Created by Blake Becker
-
-## Version History
-
-See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.
