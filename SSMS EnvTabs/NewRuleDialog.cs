@@ -25,7 +25,7 @@ namespace SSMS_EnvTabs
         private Label lblDatabaseValue;
         private Label lblName;
         private Label lblColor;
-        private Font codeFont;
+        private Font boldFont;
 
         private class ColorItem
         {
@@ -68,7 +68,7 @@ namespace SSMS_EnvTabs
         {
             Font baseFont = SystemFonts.MessageBoxFont;
             Font scaledFont = new Font(baseFont.FontFamily, baseFont.Size + 1f);
-            codeFont = new Font(FontFamily.GenericMonospace, scaledFont.Size);
+            boldFont = new Font(scaledFont, FontStyle.Bold);
 
             this.Text = "SSMS EnvTabs - New Rule";
             this.Size = new Size(430, 270);
@@ -92,10 +92,10 @@ namespace SSMS_EnvTabs
 
             lblServerValue = new Label
             {
-                Text = $"`{server}`",
+                Text = server,
                 Location = new Point(90, 40),
                 AutoSize = true,
-                Font = codeFont
+                Font = boldFont
             };
             this.Controls.Add(lblServerValue);
 
@@ -104,10 +104,10 @@ namespace SSMS_EnvTabs
 
             lblDatabaseValue = new Label
             {
-                Text = $"`{database ?? "(any)"}`",
+                Text = database ?? "(any)",
                 Location = new Point(90, 62),
                 AutoSize = true,
-                Font = codeFont
+                Font = boldFont
             };
             this.Controls.Add(lblDatabaseValue);
 
@@ -182,8 +182,8 @@ namespace SSMS_EnvTabs
                 Color fgColor = VSColorTheme.GetThemedColor(EnvironmentColors.ToolWindowTextColorKey);
                 Color txtBg = VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxBackgroundColorKey);
                 Color txtFg = VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxTextColorKey);
-                Color accentBg = VSColorTheme.GetThemedColor(EnvironmentColors.AccentMediumColorKey);
-                Color accentFg = VSColorTheme.GetThemedColor(EnvironmentColors.AccentMediumTextColorKey);
+                Color accentBg = VSColorTheme.GetThemedColor(EnvironmentColors.SystemHighlightColorKey);
+                Color accentFg = VSColorTheme.GetThemedColor(EnvironmentColors.SystemHighlightTextColorKey);
 
                 this.BackColor = bgColor;
                 this.ForeColor = fgColor;
@@ -256,7 +256,7 @@ namespace SSMS_EnvTabs
         {
             if (disposing)
             {
-                codeFont?.Dispose();
+                boldFont?.Dispose();
             }
 
             base.Dispose(disposing);
