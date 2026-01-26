@@ -14,14 +14,18 @@ namespace SSMS_EnvTabs
             public int ColorIndex { get; }
             public string Server { get; }
             public string Database { get; }
+            public Regex ServerRegex { get; }
+            public Regex DatabaseRegex { get; }
 
-            public CompiledRule(string groupName, int priority, int colorIndex, string server, string database)
+            public CompiledRule(string groupName, int priority, int colorIndex, string server, string database, Regex serverRegex, Regex databaseRegex)
             {
                 GroupName = groupName;
                 Priority = priority;
                 ColorIndex = colorIndex;
                 Server = server;
                 Database = database;
+                ServerRegex = serverRegex;
+                DatabaseRegex = databaseRegex;
             }
         }
 
@@ -48,7 +52,10 @@ namespace SSMS_EnvTabs
                     continue;
                 }
 
-                rules.Add(new CompiledRule(rule.GroupName.Trim(), rule.Priority, rule.ColorIndex, server, database));
+                Regex serverRegex = CreateLikeRegexOrNull(server);
+                Regex databaseRegex = CreateLikeRegexOrNull(database);
+
+                rules.Add(new CompiledRule(rule.GroupName.Trim(), rule.Priority, rule.ColorIndex, server, database, serverRegex, databaseRegex));
             }
             
             return rules
@@ -67,13 +74,13 @@ namespace SSMS_EnvTabs
             foreach (var rule in rules)
             {
                 if (!string.IsNullOrWhiteSpace(rule.Server)
-                    && !MatchesLike(rule.Server, server))
+                    && !Matches(rule.Server, rule.ServerRegex, server))
                 {
                     continue;
                 }
 
                 if (!string.IsNullOrWhiteSpace(rule.Database)
-                    && !MatchesLike(rule.Database, database))
+                    && !Matches(rule.Database, rule.DatabaseRegex, database))
                 {
                     continue;
                 }
@@ -87,18 +94,28 @@ namespace SSMS_EnvTabs
             return null;
         }
 
-        private static bool MatchesLike(string pattern, string value)
+        private static Regex CreateLikeRegexOrNull(string pattern)
+        {
+            if (string.IsNullOrWhiteSpace(pattern) || !pattern.Contains("%"))
+            {
+                return null;
+            }
+
+            string regex = "^" + Regex.Escape(pattern).Replace("%", ".*") + "$";
+            return new Regex(regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        }
+
+        private static bool Matches(string pattern, Regex compiledRegex, string value)
         {
             if (string.IsNullOrWhiteSpace(pattern)) return true;
             if (string.IsNullOrWhiteSpace(value)) return false;
 
-            if (!pattern.Contains("%"))
+            if (compiledRegex != null)
             {
-                return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
+                return compiledRegex.IsMatch(value);
             }
 
-            string regex = "^" + Regex.Escape(pattern).Replace("%", ".*") + "$";
-            return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
         }
     }
 }
