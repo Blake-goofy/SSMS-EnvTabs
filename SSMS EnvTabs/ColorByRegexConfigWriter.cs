@@ -207,7 +207,7 @@ namespace SSMS_EnvTabs
         private static void WriteIfChanged(string path, string content)
         {
             string existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
-            if (string.Equals(existing, content ?? string.Empty, StringComparison.Ordinal))
+            if (string.Equals(NormalizeNewlines(existing), NormalizeNewlines(content ?? string.Empty), StringComparison.Ordinal))
             {
                 return;
             }
@@ -229,6 +229,16 @@ namespace SSMS_EnvTabs
             {
                 File.Move(tmp, path);
             }
+        }
+
+        private static string NormalizeNewlines(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            return text.Replace("\r\n", "\n").Replace("\r", "\n");
         }
 
         private string ResolveConfigPath(IEnumerable<string> monikers)

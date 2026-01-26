@@ -286,7 +286,7 @@ namespace SSMS_EnvTabs
                 reason.IndexOf("DocViewEvent", StringComparison.OrdinalIgnoreCase) >= 0
             );
 
-            bool shouldUpdateColor = renamedCount > 0 || isConnectionEvent;
+            bool shouldUpdateColor = !needsRetry && (renamedCount > 0 || isConnectionEvent);
 
             if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
             {
