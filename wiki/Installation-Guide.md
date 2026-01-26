@@ -97,7 +97,7 @@ This file is created automatically the first time you:
 - Open the configuration from the Tools menu, or
 - Open a query window (if auto-configuration is enabled)
 
-See the [Quick Start Guide](Quick-Start.md) for next steps.
+See the main [README](../README.md) for a quick start guide, then refer to the [Configuration Guide](Configuration-Guide.md) for detailed setup.
 
 ## Troubleshooting Installation
 

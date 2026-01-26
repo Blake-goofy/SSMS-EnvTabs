@@ -344,8 +344,6 @@ If you can't resolve the issue:
    - Steps to reproduce
    - Relevant log entries
 
-## Common Configuration Mistakes
-
 ### Mistake 1: Rules in wrong order
 
 ```json
@@ -418,6 +416,5 @@ If you can't resolve the issue:
 
 ## Next Steps
 
-- [FAQ](FAQ.md) - Frequently asked questions
 - [Configuration Guide](Configuration-Guide.md) - Detailed configuration reference
 - [Tips & Best Practices](Tips-and-Best-Practices.md) - Optimize your setup
