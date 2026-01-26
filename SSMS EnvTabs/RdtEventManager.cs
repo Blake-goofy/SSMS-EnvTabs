@@ -278,11 +278,15 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            bool shouldUpdateColor = renamedCount > 0 
-                || (reason != null && (
-                    reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0
-                   ));
+            bool isConnectionEvent = reason != null && (
+                reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("AttributeChangeEx", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("ActiveFrameChanged", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("DocViewEvent", StringComparison.OrdinalIgnoreCase) >= 0
+            );
+
+            bool shouldUpdateColor = renamedCount > 0 || isConnectionEvent;
 
             if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
             {
