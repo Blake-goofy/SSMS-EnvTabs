@@ -116,9 +116,22 @@ namespace SSMS_EnvTabs
                 return "(?!)";
             }
 
-            var escaped = paths.Select(Regex.Escape);
+            var pathList = paths.ToList();
+            bool allSql = pathList.All(path => path.EndsWith(".sql", StringComparison.OrdinalIgnoreCase));
+            IEnumerable<string> escaped;
+            string suffix = string.Empty;
+            if (allSql)
+            {
+                escaped = pathList.Select(path => Regex.Escape(Path.GetFileNameWithoutExtension(path)));
+                suffix = "\\.sql";
+            }
+            else
+            {
+                escaped = pathList.Select(Regex.Escape);
+            }
+
             // Match filepath ending with one of the filenames.
-            string baseRegex = $"(?:^|[\\\\/])(?:{string.Join("|", escaped)})$";
+            string baseRegex = $"(?:^|[\\\\/])(?:{string.Join("|", escaped)}){suffix}$";
 
             // If the rule specifically asks for a specific ColorIndex (0-15), solve for salt
             // Note: 0 is Lavender

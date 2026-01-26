@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,7 +10,7 @@ namespace SSMS_EnvTabs
 {
     internal static class AutoConfigurationService
     {
-        private static readonly HashSet<string> suppressedConnections = new HashSet<string>();
+        private static readonly HashSet<string> suppressedConnections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static void ClearSuppressed()
         {
