@@ -1,6 +1,6 @@
 {
   "description": "Configuration for SSMS EnvTabs. Controls how query tabs are renamed and colored based on server database connection.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "settings": {
     "enableAutoRename": true,
     "enableAutoColor": true,
