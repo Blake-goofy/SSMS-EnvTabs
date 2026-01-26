@@ -18,9 +18,14 @@ namespace SSMS_EnvTabs
         private Button btnSave;
         private Button btnCancel;
         private Button btnOpenConfig;
-        private Label lblInfo;
+        private Label lblHeader;
+        private Label lblServerLabel;
+        private Label lblServerValue;
+        private Label lblDatabaseLabel;
+        private Label lblDatabaseValue;
         private Label lblName;
         private Label lblColor;
+        private Font codeFont;
 
         private class ColorItem
         {
@@ -61,37 +66,68 @@ namespace SSMS_EnvTabs
 
         private void InitializeComponent(string server, string database, int suggestedColorIndex)
         {
+            Font baseFont = SystemFonts.MessageBoxFont;
+            Font scaledFont = new Font(baseFont.FontFamily, baseFont.Size + 1f);
+            codeFont = new Font(FontFamily.GenericMonospace, scaledFont.Size);
+
             this.Text = "SSMS EnvTabs - New Rule";
-            this.Size = new Size(400, 240);
+            this.Size = new Size(430, 270);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
+            this.Font = scaledFont;
+            this.AutoScaleMode = AutoScaleMode.Font;
 
-            lblInfo = new Label
+            lblHeader = new Label
             {
-                Text = $"New connection detected:\nServer: {server}\nDatabase: {database ?? "(any)"}",
-                Location = new Point(15, 15),
-                Size = new Size(360, 40),
-                AutoSize = false
+                Text = "New connection detected",
+                Location = new Point(16, 14),
+                AutoSize = true
             };
-            this.Controls.Add(lblInfo);
+            this.Controls.Add(lblHeader);
 
-            lblName = new Label { Text = "Group Name:", Location = new Point(15, 65), AutoSize = true };
+            lblServerLabel = new Label { Text = "Server:", Location = new Point(16, 40), AutoSize = true };
+            this.Controls.Add(lblServerLabel);
+
+            lblServerValue = new Label
+            {
+                Text = $"`{server}`",
+                Location = new Point(90, 40),
+                AutoSize = true,
+                Font = codeFont
+            };
+            this.Controls.Add(lblServerValue);
+
+            lblDatabaseLabel = new Label { Text = "Database:", Location = new Point(16, 62), AutoSize = true };
+            this.Controls.Add(lblDatabaseLabel);
+
+            lblDatabaseValue = new Label
+            {
+                Text = $"`{database ?? "(any)"}`",
+                Location = new Point(90, 62),
+                AutoSize = true,
+                Font = codeFont
+            };
+            this.Controls.Add(lblDatabaseValue);
+
+            lblName = new Label { Text = "Group Name:", Location = new Point(16, 98), AutoSize = true };
             this.Controls.Add(lblName);
 
-            txtName = new TextBox { Location = new Point(100, 62), Size = new Size(260, 23) };
+            txtName = new TextBox { Location = new Point(130, 94), Size = new Size(270, 26) };
             this.Controls.Add(txtName);
 
-            lblColor = new Label { Text = "Color:", Location = new Point(15, 95), AutoSize = true };
+            lblColor = new Label { Text = "Color:", Location = new Point(16, 132), AutoSize = true };
             this.Controls.Add(lblColor);
 
             cmbColor = new ComboBox 
             { 
-                Location = new Point(100, 92), 
-                Size = new Size(260, 23),
+                Location = new Point(130, 128), 
+                Size = new Size(270, 26),
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                DrawMode = DrawMode.OwnerDrawFixed
+                DrawMode = DrawMode.OwnerDrawFixed,
+                FlatStyle = FlatStyle.Flat,
+                ItemHeight = 22
             };
             this.Controls.Add(cmbColor);
 
@@ -117,24 +153,20 @@ namespace SSMS_EnvTabs
             // Note: DataSource automatically sets SelectedIndex to 0 if list is not empty.
             // We rely on that behavior since orderedList[0] is our desired selection.
 
-            btnSave = new Button { Text = "Save", Location = new Point(90, 150), DialogResult = DialogResult.OK };
+            btnSave = new Button { Text = "Save", Location = new Point(90, 190), Size = new Size(90, 30), DialogResult = DialogResult.OK };
             btnSave.Click += (s, e) => { RuleName = txtName.Text; SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; };
             this.Controls.Add(btnSave);
 
-            btnCancel = new Button { Text = "Cancel", Location = new Point(170, 150), DialogResult = DialogResult.Cancel };
+            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
             this.Controls.Add(btnCancel);
 
-            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(250, 150), Size = new Size(120, 23), DialogResult = DialogResult.Yes };
+            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
             btnOpenConfig.Click += (s, e) => { 
                 RuleName = txtName.Text; 
                 SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; 
                 OpenConfigRequested = true; 
             };
             this.Controls.Add(btnOpenConfig);
-                        
-            btnSave.Location = new Point(50, 150);
-            btnOpenConfig.Location = new Point(130, 150);
-            btnCancel.Location = new Point(260, 150);
             
             this.AcceptButton = btnSave;
             this.CancelButton = btnCancel;
@@ -148,17 +180,22 @@ namespace SSMS_EnvTabs
                 // Note: VSColorTheme.GetThemedColor returns System.Drawing.Color in VSSDK.
                 Color bgColor = VSColorTheme.GetThemedColor(EnvironmentColors.ToolWindowBackgroundColorKey);
                 Color fgColor = VSColorTheme.GetThemedColor(EnvironmentColors.ToolWindowTextColorKey);
-                Color btnBg = VSColorTheme.GetThemedColor(EnvironmentColors.CommandBarGradientBeginColorKey); // Just a guess for button
                 Color txtBg = VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxBackgroundColorKey);
                 Color txtFg = VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxTextColorKey);
+                Color accentBg = VSColorTheme.GetThemedColor(EnvironmentColors.AccentMediumColorKey);
+                Color accentFg = VSColorTheme.GetThemedColor(EnvironmentColors.AccentMediumTextColorKey);
 
                 this.BackColor = bgColor;
                 this.ForeColor = fgColor;
 
                 // Labels inherit parent usually
-                lblInfo.ForeColor = fgColor;
+                lblHeader.ForeColor = fgColor;
+                lblServerLabel.ForeColor = fgColor;
+                lblDatabaseLabel.ForeColor = fgColor;
                 lblName.ForeColor = fgColor;
                 lblColor.ForeColor = fgColor;
+                lblServerValue.ForeColor = fgColor;
+                lblDatabaseValue.ForeColor = fgColor;
 
                 // TextBoxes
                 txtName.BackColor = txtBg;
@@ -171,13 +208,18 @@ namespace SSMS_EnvTabs
                 // Buttons
                 // WinForms Buttons are hard to style perfectly flat without custom painting,
                 // but we can try to make them blend in.
-                foreach (var btn in new[] { btnSave, btnCancel, btnOpenConfig })
+                foreach (var btn in new[] { btnCancel, btnOpenConfig })
                 {
                     btn.FlatStyle = FlatStyle.Flat;
                     btn.BackColor = bgColor; 
                     btn.ForeColor = fgColor;
                     btn.FlatAppearance.BorderColor = fgColor;
                 }
+
+                btnSave.FlatStyle = FlatStyle.Flat;
+                btnSave.BackColor = accentBg;
+                btnSave.ForeColor = accentFg;
+                btnSave.FlatAppearance.BorderColor = accentBg;
             }
             catch
             {
@@ -208,6 +250,16 @@ namespace SSMS_EnvTabs
             }
 
             e.DrawFocusRectangle();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                codeFont?.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }
