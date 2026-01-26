@@ -5,25 +5,26 @@ SSMS EnvTabs is a Visual Studio Extension (VSIX) for SQL Server Management Studi
 
 ## Architecture & Key Components
 - **Entry Point**: `SSMS_EnvTabsPackage.cs` initializes the extension as an `AsyncPackage`.
-- **Event Loop**: `RdtEventManager.cs` subscribes to `IVsRunningDocTableEvents` to detect when query windows are opened, closed, or switched. This is the core "engine" of the extension.
+- **Event Loop**: `RdtEventManager.cs` subscribes to `IVsRunningDocTableEvents` to detect when query windows are opened, closed, or switched. 
+  - **Connection Changes**: Uses `OnAfterAttributeChange` events combined with a polling retry mechanism (`ScheduleRenameRetry`) to handle SSMS's delayed UI updates when switching connections.
 - **Logic**:
   - `TabRuleMatcher.cs`: Matches current connection info against loaded rules.
   - `TabRenamer.cs`: Renames window captions (e.g., "Prod-1") using `IVsWindowFrame.SetProperty`.
-  - `ColorByRegexConfigWriter.cs`: Writes regex-based coloring rules to a temp file (`ColorByRegexConfig.txt`) consumed by SSMS/MIDS for coloring query tabs.
-- **Configuration**: User rules are loaded from `%USERPROFILE%\Documents\SSMS EnvTabs\TabGroupConfig.json` via `TabGroupConfigLoader.cs`.
+  - `TabGroupColorSolver.cs`: Implements SSMS's hashing algorithm to calculate salts required to target specific colors.
+  - `ColorByRegexConfigWriter.cs`: Writes regex-based coloring rules to a temp file (`ColorByRegexConfig.txt`) consumed by SSMS/MIDS. It uses the Solver to automatically inject salts.
+- **Configuration**: User rules are loaded from `%USERPROFILE%\Documents\SSMS EnvTabs\TabGroupConfig.json`.
 
 ### Coloring Logic & Challenges
 - **Mechanism**: The extension writes a `ColorByRegexConfig.txt` file which SSMS reads.
-- **Regex Format**: We generate regexes based on **Filenames only** (e.g., `(query.sql|script.sql)`) to avoid path dependency issues when files move.
-- **Color Assignment**:
-  - SSMS assigns colors based on a **hash of the regex string itself**.
-  - Changing the regex (even adding whitespace) changes the assigned color unpredictably.
-  - The extension supports a `salt` property in `TabGroupConfig.json` (e.g., `"salt": "prod-1"`) which is appended as a regex comment `(?#salt:prod-1)`. This allows the user to manually "roll" for a different color by changing the salt string without affecting the matching logic.
-  - Line number or order in the config file does **not** determine the color.
-- **Color Persistence**:
-  - SSMS outputs a log-like file `customized-groupid-color-<GUID>.json` mapping internal GroupIDs to ColorIndexes. This file is for reference/output only; writing to it has no effect.
-  - **Challenge**: There is currently no known programmatic way to force a specific color (e.g., "Red") for a given rule. The "Set Tab Color" UI feature in SSMS is the only known manual override.
-  - **Future Goal**: Investigate if the "Set Tab Color" command can be invoked programmatically or if the regex string can be "salted" to target specific hashes/colors.
+- **Regex Format**: We generate regexes based on **Filenames only** (e.g., `(query.sql|script.sql)`) to avoid path dependency issues.
+- **Color Assignment Algorithm** (Reverse Engineered):
+  - SSMS calculates a hash using **.NET Framework Legacy 32-bit String.GetHashCode**.
+  - The Color Index (0-15) is determined by `Math.Abs(Hash) % 16`.
+- **Automated Salting**:
+  - Users specify a `ColorIndex` (0-15) in their config.
+  - The extension (via `TabGroupColorSolver`) bruteforces a short suffix string (salt) such that `Hash(Regex + (?#salt:xyz)) % 16 == TargetIndex`.
+  - This salt is appended to the regex as a comment, invisible to matching logic but affecting the hash.
+- **Color Persistence**: SSMS reads `ColorByRegexConfig.txt` when it changes. We force updates when tabs open or close.
 
 ## Developer Workflows
 

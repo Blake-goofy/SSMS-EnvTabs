@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,7 +16,7 @@ namespace SSMS_EnvTabs
     {
         private const uint SeidWindowFrame = 1;
         private const uint SeidDocumentFrame = 2;
-        private const int RenameRetryCount = 2;
+        private const int RenameRetryCount = 20; // Increased to handle slow connection changes (up to 5s)
         private const int RenameRetryDelayMs = 250;
 
         private readonly AsyncPackage package;
@@ -33,6 +34,35 @@ namespace SSMS_EnvTabs
         private DateTime cachedConfigLastWriteUtc;
         private List<TabRuleMatcher.CompiledRule> cachedRules;
 
+        private sealed class ReflectionEventSubscription : IDisposable
+        {
+            private readonly object target;
+            private readonly EventInfo evt;
+            private readonly Delegate handler;
+
+            public ReflectionEventSubscription(object target, EventInfo evt, Delegate handler)
+            {
+                this.target = target;
+                this.evt = evt;
+                this.handler = handler;
+            }
+
+            public void Dispose()
+            {
+                try
+                {
+                    evt?.RemoveEventHandler(target, handler);
+                }
+                catch
+                {
+                    // best-effort
+                }
+            }
+        }
+
+        private readonly Dictionary<uint, List<ReflectionEventSubscription>> docViewSubscriptionsByCookie =
+            new Dictionary<uint, List<ReflectionEventSubscription>>();
+        
         internal sealed class OpenDocumentInfo
         {
             public uint Cookie { get; set; }
@@ -103,6 +133,19 @@ namespace SSMS_EnvTabs
 
             try
             {
+                foreach (var kvp in docViewSubscriptionsByCookie)
+                {
+                    foreach (var sub in kvp.Value)
+                    {
+                        try { sub.Dispose(); } catch { }
+                    }
+                }
+                docViewSubscriptionsByCookie.Clear();
+            }
+            catch { }
+
+            try
+            {
                 if (selectionEventsCookie != 0 && monitorSelection != null)
                 {
                     monitorSelection.UnadviseSelectionEvents(selectionEventsCookie);
@@ -168,6 +211,8 @@ namespace SSMS_EnvTabs
         private bool HandlePotentialChange(uint docCookie, IVsWindowFrame frame, string reason)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            
+            // Too verbose: EnvTabsLog.Info($"HandlePotentialChange: cookie={docCookie} reason={reason}");
 
             var config = LoadConfigOrNull();
             if (config == null)
@@ -182,17 +227,47 @@ namespace SSMS_EnvTabs
             }
 
             bool needsRetry = false;
+            int renamedCount = 0;
 
             if (config.Settings?.EnableAutoRename != false && frame != null)
             {
                 string caption = TryReadFrameCaption(frame);
-                if (IsRenameEligible(caption))
+                
+                // If the reason is AttributeChange (connection change), we should attempt rename even if it doesn't look eligible anymore (e.g. if it was already renamed)
+                // because the user is changing the connection to something new.
+                // Or if it reverted to "SQLQuery1.sql".
+                bool forceCheck = reason != null && (
+                    reason.StartsWith("AttributeChange", StringComparison.OrdinalIgnoreCase) ||
+                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    reason.IndexOf("DocViewEvent", StringComparison.OrdinalIgnoreCase) >= 0
+                );
+
+                if (forceCheck || IsRenameEligible(caption))
                 {
                     if (TryGetConnectionInfo(frame, out string server, out string database))
                     {
                         try
                         {
-                            TabRenamer.ApplyRenamesOrThrow(new[] { (docCookie, frame, server, database, caption) }, rules);
+                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { (docCookie, frame, server, database, caption) }, rules);
+                            
+                            // Auto-Configure logic if no rule matched and not renamed
+                            if (renamedCount == 0 && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
+                            {
+                                // Check if this server/db actually matched any existing rule?
+                                // TabRenamer returns 0 if no match found.
+                                // But we should verify we haven't already processed it.
+                                // We need to be careful not to spam prompts on initial load.
+                                // Only prompt if this is a "valid" connection (has text).
+                                if (!string.IsNullOrWhiteSpace(server))
+                                {
+                                    // Dispatch to UI thread later to avoid blocking RDT event
+                                    _ = package.JoinableTaskFactory.RunAsync(async () =>
+                                    {
+                                        await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                        AutoConfigurationService.ProposeNewRule(config, server, database);
+                                    });
+                                }
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -201,12 +276,17 @@ namespace SSMS_EnvTabs
                     }
                     else
                     {
+                        // Needs retry if connection info not found yet
                         needsRetry = true;
                     }
                 }
             }
 
-            if (config.Settings?.EnableAutoColor == true)
+            bool shouldUpdateColor = renamedCount > 0 
+                || (reason != null && reason.IndexOf("FirstDocumentLock", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (reason != null && reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0);
+
+            if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
             {
                 try
                 {
@@ -318,6 +398,145 @@ namespace SSMS_EnvTabs
             {
                 return false;
             }
+        }
+
+        private void TryHookDocViewConnectionEvents(uint docCookie, IVsWindowFrame frame)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (docCookie == 0 || frame == null)
+            {
+                return;
+            }
+
+            if (docViewSubscriptionsByCookie.ContainsKey(docCookie))
+            {
+                return; // already hooked
+            }
+
+            object docView = null;
+            try
+            {
+                if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object dv) == VSConstants.S_OK)
+                {
+                    docView = dv;
+                }
+
+                if (docView == null && frame.GetProperty((int)__VSFPROPID.VSFPROPID_ViewHelper, out object vh) == VSConstants.S_OK)
+                {
+                    docView = vh;
+                }
+            }
+            catch
+            {
+                docView = null;
+            }
+
+            if (docView == null)
+            {
+                return;
+            }
+
+            var type = docView.GetType();
+
+            // Names observed in logs: add_ConnectionChanged, add_ConnectionDisconnected, add_NewConnectionForScript
+            string[] eventNames = new[]
+            {
+                "ConnectionChanged",
+                "ConnectionDisconnected",
+                "NewConnectionForScript",
+            };
+
+            var subs = new List<ReflectionEventSubscription>();
+
+            foreach (string eventName in eventNames)
+            {
+                EventInfo evt = null;
+                try
+                {
+                    evt = type.GetEvent(eventName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                }
+                catch
+                {
+                    evt = null;
+                }
+
+                if (evt?.EventHandlerType == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var handler = CreateEventHandlerDelegate(evt.EventHandlerType, docCookie, eventName);
+                    evt.AddEventHandler(docView, handler);
+                    subs.Add(new ReflectionEventSubscription(docView, evt, handler));
+                    EnvTabsLog.Info($"Hooked DocView event '{eventName}' for cookie={docCookie}");
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Failed to hook DocView event '{eventName}' for cookie={docCookie}: {ex.Message}");
+                }
+            }
+
+            if (subs.Count > 0)
+            {
+                docViewSubscriptionsByCookie[docCookie] = subs;
+            }
+        }
+
+        private Delegate CreateEventHandlerDelegate(Type handlerType, uint docCookie, string eventName)
+        {
+            // Build a delegate matching *any* event handler signature; ignore its parameters.
+            MethodInfo invoke = handlerType.GetMethod("Invoke");
+            if (invoke == null)
+            {
+                throw new InvalidOperationException("Handler delegate has no Invoke method.");
+            }
+
+            var parameters = invoke.GetParameters()
+                .Select(p => Expression.Parameter(p.ParameterType, p.Name))
+                .ToArray();
+
+            var methodInfo = typeof(RdtEventManager).GetMethod(nameof(OnDocViewEventFired), BindingFlags.Instance | BindingFlags.NonPublic);
+            var call = Expression.Call(
+                Expression.Constant(this),
+                methodInfo,
+                Expression.Constant(docCookie),
+                Expression.Constant(eventName));
+
+            Expression body;
+            if (invoke.ReturnType == typeof(void))
+            {
+                body = call;
+            }
+            else
+            {
+                body = Expression.Block(call, Expression.Default(invoke.ReturnType));
+            }
+
+            return Expression.Lambda(handlerType, body, parameters).Compile();
+        }
+
+        private void OnDocViewEventFired(uint docCookie, string eventName)
+        {
+            // Don't assume event thread; schedule onto UI thread.
+            _ = package.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    await Task.Delay(200); // Small delay to let SSMS update internal state
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    
+                    // Force a retry sequence
+                    ScheduleRenameRetry(docCookie, $"DocViewEvent:{eventName}");
+                }
+                catch (Exception ex)
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    EnvTabsLog.Info($"DocView event handler failed ({eventName}) cookie={docCookie}: {ex.Message}");
+                }
+            });
         }
 
         private void UpdateColorOnly(string reason)
@@ -602,6 +821,7 @@ namespace SSMS_EnvTabs
                 IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
                 if (frame != null)
                 {
+                    TryHookDocViewConnectionEvents(docCookie, frame);
                     LogFrameCaptions(frame, "FirstDocumentLock");
                     bool done = HandlePotentialChange(docCookie, frame, reason: "FirstDocumentLock");
                     if (!done)
@@ -620,6 +840,7 @@ namespace SSMS_EnvTabs
 
             if (pFrame != null)
             {
+                TryHookDocViewConnectionEvents(docCookie, pFrame);
                 bool done = HandlePotentialChange(docCookie, pFrame, reason: "DocumentWindowShow");
                 if (!done)
                 {
@@ -633,6 +854,8 @@ namespace SSMS_EnvTabs
         public int OnAfterAttributeChangeEx(uint docCookie, uint grfAttribs, IVsHierarchy pHierOld, uint itemidOld, string pszMkDocumentOld, IVsHierarchy pHierNew, uint itemidNew, string pszMkDocumentNew)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            // EnvTabsLog.Info($"OnAfterAttributeChangeEx: cookie={docCookie} attribs={grfAttribs} old={pszMkDocumentOld} new={pszMkDocumentNew}");
 
             string moniker = pszMkDocumentNew;
             if (string.IsNullOrWhiteSpace(moniker))
@@ -660,6 +883,16 @@ namespace SSMS_EnvTabs
             {
                 TabRenamer.ForgetCookie(docCookie);
                 renameRetryCounts.Remove(docCookie);
+
+                if (docViewSubscriptionsByCookie.TryGetValue(docCookie, out var subs))
+                {
+                    foreach (var sub in subs)
+                    {
+                        try { sub.Dispose(); } catch { }
+                    }
+                    docViewSubscriptionsByCookie.Remove(docCookie);
+                }
+
                 UpdateColorOnly("LastDocumentUnlock");
             }
 
@@ -673,15 +906,41 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            // When connection changes (e.g. database dropdown), SSMS might not fire a full window show/hide,
-            // but it may update attributes or the window caption. We check here to catch those cases.
+            // EnvTabsLog.Info($"OnAfterAttributeChange: cookie={docCookie} attribs={grfAttribs}");
+
             string moniker = TryGetMonikerFromCookie(docCookie);
             if (!string.IsNullOrWhiteSpace(moniker))
             {
                 IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
                 if (frame != null)
                 {
-                    HandlePotentialChange(docCookie, frame, reason: "AttributeChange");
+                    // Pass "force=true" semantics via the reason string or just rely on ScheduleRenameRetry
+                    // The issue is that HandlePotentialChange calls IsRenameEligible which expects "SQLQueryX.sql" format OR already renamed format.
+                    // But if SSMS resets to "SQLQuery1.sql" (no connection info), IsRenameEligible=true, but TryGetConnectionInfo=false -> needsRetry=true.
+                    
+                    bool done = HandlePotentialChange(docCookie, frame, reason: "AttributeChange");
+                    
+                    // If not successfully renamed (e.g. because connection info missing), schedule retries
+                    if (!done)
+                    {
+                        ScheduleRenameRetry(docCookie, "AttributeChange");
+                    }
+                    else
+                    {
+                        // Even if "done" is true (meaning we processed it), if we just renamed it back to "SQLQuery1.sql" because connection info was missing...
+                        // Wait, HandlePotentialChange only returns true if it *successfully* renamed (ApplyRenamesOrThrow) OR if it decided no rename needed.
+                        // If connection info is missing, it returns false (needsRetry).
+                        // So logic holds.
+                        
+                        // BUT: What if IsRenameEligible returns false? (e.g. caption="Previously Renamed Tab")
+                        // If user changes connection, caption might momentarily stay "Previously Renamed Tab".
+                        // IsRenameEligible checks for "SQLQuery...". It returns FALSE for "Previously Renamed Tab".
+                        // So HandlePotentialChange returns TRUE (early exit).
+                        // And we never retry.
+                        
+                        // FIX: We must force a retry if it's an AttributeChange, because the caption is likely STALE.
+                        ScheduleRenameRetry(docCookie, "AttributeChange:Force");
+                    }
                 }
             }
 
@@ -700,12 +959,26 @@ namespace SSMS_EnvTabs
                 if (varValueNew is IVsWindowFrame frame)
                 {
                     uint cookie = 0;
-                    if (TryGetMonikerFromFrame(frame, out string moniker))
+                    string moniker = null;
+                    if (TryGetMonikerFromFrame(frame, out moniker))
                     {
                         TryGetCookieFromMoniker(moniker, out cookie);
                     }
+                    
+                    if (cookie == 0)
+                    {
+                         // EnvTabsLog.Info($"ActiveFrameChanged: Found frame but no cookie. Moniker='{moniker}'");
+                    }
+                    else
+                    {
+                        TryHookDocViewConnectionEvents(cookie, frame);
+                    }
 
-                    HandlePotentialChange(cookie, frame, reason: "ActiveFrameChanged");
+                    bool done = HandlePotentialChange(cookie, frame, reason: "ActiveFrameChanged");
+                    if (!done && cookie != 0)
+                    {
+                        ScheduleRenameRetry(cookie, "ActiveFrameChanged");
+                    }
                 }
             }
 

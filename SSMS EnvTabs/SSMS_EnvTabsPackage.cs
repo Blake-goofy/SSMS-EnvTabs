@@ -42,8 +42,7 @@ namespace SSMS_EnvTabs
         public const int cmdidCalibrate = 0x0100;
         public const int cmdidGenerateSalt = 0x0101;
         public const int cmdidCaptureData = 0x0102;
-
-        #region Package Members
+        public const int cmdidOpenConfig = 0x0103;
 
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
@@ -64,35 +63,9 @@ namespace SSMS_EnvTabs
             TabGroupConfigLoader.EnsureDefaultConfigExists();
             rdtEventManager = await RdtEventManager.CreateAndStartAsync(this, cancellationToken);
             
-            // Uncomment to dump commands for debugging "Set Tab Color" logic
-            // await DumpCommandsAsync();
-            
-            // Initialize research commands
-            await ColorResearchCommands.InitializeAsync(this);
+            // Register commands
+            await OpenConfigCommand.InitializeAsync(this);
         }
 
-        private async Task DumpCommandsAsync()
-        {
-            await this.JoinableTaskFactory.SwitchToMainThreadAsync();
-            var dte = await this.GetServiceAsync(typeof(EnvDTE.DTE)) as EnvDTE.DTE;
-            if (dte != null)
-            {
-                foreach (EnvDTE.Command cmd in dte.Commands)
-                {
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(cmd.Name) && 
-                           (cmd.Name.IndexOf("color", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            cmd.Name.IndexOf("tab", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            EnvTabsLog.Info($"Command Found: {cmd.Name} (ID: {cmd.ID}, Guid: {cmd.Guid})");
-                        }
-                    }
-                    catch { }
-                }
-            }
-        }
-
-        #endregion
     }
 }

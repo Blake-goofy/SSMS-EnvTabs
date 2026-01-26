@@ -14,7 +14,6 @@ namespace SSMS_EnvTabs
         private const string EndMarker = "// SSMS EnvTabs: END generated";
 
         private string resolvedConfigPath;
-        private bool fallbackScanAttempted;
 
         public void UpdateFromSnapshot(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
         {
@@ -121,13 +120,13 @@ namespace SSMS_EnvTabs
             // Match filepath ending with one of the filenames.
             string baseRegex = $"(?:^|[\\\\/])(?:{string.Join("|", escaped)})$";
 
-            // If the rule specifically asks for a specific ColorIndex (1-15), solve for salt
-            // Note: 0 usually means "no preference" or default
-            string salt = rule.Salt;
-            if (rule.ColorIndex > 0)
+            // If the rule specifically asks for a specific ColorIndex (0-15), solve for salt
+            // Note: 0 is Lavender
+            string salt = null;
+            if (rule.ColorIndex >= 0)
             {
                 // Attempt to see if current salt (if any) already produces the right color
-                string currentFull = baseRegex + (!string.IsNullOrWhiteSpace(salt) ? $"(?#salt:{salt})" : "");
+                string currentFull = baseRegex;
                 int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(currentFull);
                 int currentColor = Math.Abs(currentHash) % 16;
 
@@ -226,6 +225,7 @@ namespace SSMS_EnvTabs
                 return resolvedConfigPath;
             }
 
+            // 1. Try to deduce from open documents (most reliable if file is near them)
             foreach (var moniker in monikers ?? Enumerable.Empty<string>())
             {
                 string candidate = TryGetConfigPathFromMoniker(moniker);
@@ -236,15 +236,14 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            if (!fallbackScanAttempted)
+            // 2. Scan Temp folder. 
+            // We do this every time if not found yet, because the file might be created later by SSMS.
+            // But we must ensure the scan is fast and doesn't crash.
+            string fallback = TryScanTempForConfig();
+            if (!string.IsNullOrWhiteSpace(fallback))
             {
-                fallbackScanAttempted = true;
-                string fallback = TryScanTempForConfig();
-                if (!string.IsNullOrWhiteSpace(fallback))
-                {
-                    resolvedConfigPath = fallback;
-                    return fallback;
-                }
+                resolvedConfigPath = fallback;
+                return fallback;
             }
 
             return null;
@@ -309,27 +308,36 @@ namespace SSMS_EnvTabs
                     return null;
                 }
 
-                string newest = null;
+                // SSMS typically places the file in a subdirectory of Temp.
+                // Searching recursively (AllDirectories) is dangerous due to permissions.
+                // We iterate top-level directories and look inside them.
+                
+                string bestCandidate = null;
                 DateTime newestWriteUtc = DateTime.MinValue;
 
-                foreach (var file in Directory.EnumerateFiles(temp, "ColorByRegexConfig.txt", SearchOption.AllDirectories))
+                var dirs = Directory.GetDirectories(temp);
+                foreach (var dir in dirs)
                 {
                     try
                     {
-                        DateTime writeUtc = File.GetLastWriteTimeUtc(file);
-                        if (writeUtc > newestWriteUtc)
+                        string candidate = Path.Combine(dir, "ColorByRegexConfig.txt");
+                        if (File.Exists(candidate))
                         {
-                            newestWriteUtc = writeUtc;
-                            newest = file;
+                            DateTime writeUtc = File.GetLastWriteTimeUtc(candidate);
+                            if (writeUtc > newestWriteUtc)
+                            {
+                                newestWriteUtc = writeUtc;
+                                bestCandidate = candidate;
+                            }
                         }
                     }
                     catch
                     {
-                        // Ignore this path.
+                        // Ignore access errors
                     }
                 }
 
-                return newest;
+                return bestCandidate;
             }
             catch
             {
