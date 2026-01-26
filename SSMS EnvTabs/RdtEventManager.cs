@@ -5,8 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Linq.Expressions;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,34 +41,7 @@ namespace SSMS_EnvTabs
 
         private DateTime suppressColorUpdatesUntilUtc;
 
-        private sealed class ReflectionEventSubscription : IDisposable
-        {
-            private readonly object target;
-            private readonly EventInfo evt;
-            private readonly Delegate handler;
 
-            public ReflectionEventSubscription(object target, EventInfo evt, Delegate handler)
-            {
-                this.target = target;
-                this.evt = evt;
-                this.handler = handler;
-            }
-
-            public void Dispose()
-            {
-                try
-                {
-                    evt?.RemoveEventHandler(target, handler);
-                }
-                catch
-                {
-                    // best-effort
-                }
-            }
-        }
-
-        private readonly Dictionary<uint, List<ReflectionEventSubscription>> docViewSubscriptionsByCookie =
-            new Dictionary<uint, List<ReflectionEventSubscription>>();
         
         internal sealed class OpenDocumentInfo
         {
@@ -171,18 +142,7 @@ namespace SSMS_EnvTabs
             }
             catch { }
 
-            try
-            {
-                foreach (var kvp in docViewSubscriptionsByCookie)
-                {
-                    foreach (var sub in kvp.Value)
-                    {
-                        try { sub.Dispose(); } catch { }
-                    }
-                }
-                docViewSubscriptionsByCookie.Clear();
-            }
-            catch { }
+
 
             try
             {
@@ -236,8 +196,7 @@ namespace SSMS_EnvTabs
                 // Or if it reverted to "SQLQuery1.sql".
                 bool forceCheck = reason != null && (
                     reason.StartsWith("AttributeChange", StringComparison.OrdinalIgnoreCase) ||
-                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    reason.IndexOf("DocViewEvent", StringComparison.OrdinalIgnoreCase) >= 0
+                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0
                 );
 
                 if (forceCheck || IsRenameEligible(caption))
@@ -288,8 +247,7 @@ namespace SSMS_EnvTabs
                 reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("AttributeChangeEx", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                reason.IndexOf("ActiveFrameChanged", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                reason.IndexOf("DocViewEvent", StringComparison.OrdinalIgnoreCase) >= 0
+                reason.IndexOf("ActiveFrameChanged", StringComparison.OrdinalIgnoreCase) >= 0
             );
 
             bool shouldUpdateColor = !needsRetry && (renamedCount > 0 || isConnectionEvent);
@@ -317,144 +275,11 @@ namespace SSMS_EnvTabs
             return !needsRetry;
         }
 
-        private void TryHookDocViewConnectionEvents(uint docCookie, IVsWindowFrame frame)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
 
-            if (docCookie == 0 || frame == null)
-            {
-                return;
-            }
 
-            if (docViewSubscriptionsByCookie.ContainsKey(docCookie))
-            {
-                return; // already hooked
-            }
 
-            object docView = null;
-            try
-            {
-                if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object dv) == VSConstants.S_OK)
-                {
-                    docView = dv;
-                }
 
-                if (docView == null && frame.GetProperty((int)__VSFPROPID.VSFPROPID_ViewHelper, out object vh) == VSConstants.S_OK)
-                {
-                    docView = vh;
-                }
-            }
-            catch
-            {
-                docView = null;
-            }
 
-            if (docView == null)
-            {
-                return;
-            }
-
-            var type = docView.GetType();
-
-            // Names observed in logs: add_ConnectionChanged, add_ConnectionDisconnected, add_NewConnectionForScript
-            string[] eventNames = new[]
-            {
-                "ConnectionChanged",
-                "ConnectionDisconnected",
-                "NewConnectionForScript",
-            };
-
-            var subs = new List<ReflectionEventSubscription>();
-
-            foreach (string eventName in eventNames)
-            {
-                EventInfo evt = null;
-                try
-                {
-                    evt = type.GetEvent(eventName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                }
-                catch
-                {
-                    evt = null;
-                }
-
-                if (evt?.EventHandlerType == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var handler = CreateEventHandlerDelegate(evt.EventHandlerType, docCookie, eventName);
-                    evt.AddEventHandler(docView, handler);
-                    subs.Add(new ReflectionEventSubscription(docView, evt, handler));
-                    EnvTabsLog.Info($"Hooked DocView event '{eventName}' for cookie={docCookie}");
-                }
-                catch (Exception ex)
-                {
-                    EnvTabsLog.Info($"Failed to hook DocView event '{eventName}' for cookie={docCookie}: {ex.Message}");
-                }
-            }
-
-            if (subs.Count > 0)
-            {
-                docViewSubscriptionsByCookie[docCookie] = subs;
-            }
-        }
-
-        private Delegate CreateEventHandlerDelegate(Type handlerType, uint docCookie, string eventName)
-        {
-            // Build a delegate matching *any* event handler signature; ignore its parameters.
-            MethodInfo invoke = handlerType.GetMethod("Invoke");
-            if (invoke == null)
-            {
-                throw new InvalidOperationException("Handler delegate has no Invoke method.");
-            }
-
-            var parameters = invoke.GetParameters()
-                .Select(p => Expression.Parameter(p.ParameterType, p.Name))
-                .ToArray();
-
-            var methodInfo = typeof(RdtEventManager).GetMethod(nameof(OnDocViewEventFired), BindingFlags.Instance | BindingFlags.NonPublic);
-            var call = Expression.Call(
-                Expression.Constant(this),
-                methodInfo,
-                Expression.Constant(docCookie),
-                Expression.Constant(eventName));
-
-            Expression body;
-            if (invoke.ReturnType == typeof(void))
-            {
-                body = call;
-            }
-            else
-            {
-                body = Expression.Block(call, Expression.Default(invoke.ReturnType));
-            }
-
-            return Expression.Lambda(handlerType, body, parameters).Compile();
-        }
-
-        private void OnDocViewEventFired(uint docCookie, string eventName)
-        {
-            // Don't assume event thread; schedule onto UI thread.
-            _ = package.JoinableTaskFactory.RunAsync(async () =>
-            {
-                try
-                {
-                    await Task.Delay(200); // Small delay to let SSMS update internal state
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    
-                    // Force a retry sequence
-                    ScheduleRenameRetry(docCookie, $"DocViewEvent:{eventName}");
-                }
-                catch (Exception ex)
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    EnvTabsLog.Info($"DocView event handler failed ({eventName}) cookie={docCookie}: {ex.Message}");
-                }
-            });
-        }
 
         private void ScheduleRenameRetry(uint docCookie, string reason)
         {

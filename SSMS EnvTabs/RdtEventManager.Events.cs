@@ -18,7 +18,6 @@ namespace SSMS_EnvTabs
 
             if (pFrame != null)
             {
-                TryHookDocViewConnectionEvents(docCookie, pFrame);
                 bool done = HandlePotentialChange(docCookie, pFrame, reason: "DocumentWindowShow");
                 if (!done)
                 {
@@ -59,15 +58,6 @@ namespace SSMS_EnvTabs
             {
                 TabRenamer.ForgetCookie(docCookie);
                 renameRetryCounts.Remove(docCookie);
-
-                if (docViewSubscriptionsByCookie.TryGetValue(docCookie, out var subs))
-                {
-                    foreach (var sub in subs)
-                    {
-                        try { sub.Dispose(); } catch { }
-                    }
-                    docViewSubscriptionsByCookie.Remove(docCookie);
-                }
 
                 UpdateColorOnly("LastDocumentUnlock");
             }
@@ -135,10 +125,6 @@ namespace SSMS_EnvTabs
                     if (cookie == 0)
                     {
                         // Found frame but no cookie
-                    }
-                    else
-                    {
-                        TryHookDocViewConnectionEvents(cookie, frame);
                     }
 
                     bool done = HandlePotentialChange(cookie, frame, reason: "ActiveFrameChanged");
