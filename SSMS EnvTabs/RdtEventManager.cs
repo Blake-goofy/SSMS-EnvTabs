@@ -411,7 +411,10 @@ namespace SSMS_EnvTabs
             }
 
             bool shouldUpdateColor = renamedCount > 0 
-                || (reason != null && reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0);
+                || (reason != null && (
+                    reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0
+                   ));
 
             if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
             {
@@ -1006,7 +1009,12 @@ namespace SSMS_EnvTabs
         }
 
         public int OnAfterDocumentWindowHide(uint docCookie, IVsWindowFrame pFrame) => VSConstants.S_OK;
-        public int OnAfterSave(uint docCookie) => VSConstants.S_OK;
+        public int OnAfterSave(uint docCookie) 
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            UpdateColorOnly("AfterSave");
+            return VSConstants.S_OK;
+        }
         public int OnBeforeSave(uint docCookie) => VSConstants.S_OK;
         public int OnAfterAttributeChange(uint docCookie, uint grfAttribs)
         {
