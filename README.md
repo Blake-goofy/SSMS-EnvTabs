@@ -58,6 +58,7 @@ For detailed documentation, please visit the [Wiki](wiki/):
 - **[Configuration Guide](wiki/Configuration-Guide.md)** - Complete configuration reference with examples
 - **[Color Reference](wiki/Color-Reference.md)** - All 16 available colors
 - **[Wildcard Patterns](wiki/Wildcard-Patterns.md)** - Pattern matching guide
+- **[Hot it works](wiki/Hot-it-works.md)** - How EnvTabs uses SSMS color tabs and salt-based hashing
 - **[Troubleshooting](wiki/Troubleshooting.md)** - Common issues and solutions
 - **[Tips & Best Practices](wiki/Tips-and-Best-Practices.md)** - Optimize your workflow
 
