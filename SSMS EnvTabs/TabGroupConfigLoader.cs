@@ -96,7 +96,10 @@ namespace SSMS_EnvTabs
                 byte[] utf8Bytes = Encoding.UTF8.GetBytes(jsonText);
                 using (var stream = new MemoryStream(utf8Bytes))
                 {
-                    var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig));
+                    var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig), new DataContractJsonSerializerSettings
+                    {
+                        UseSimpleDictionaryFormat = true
+                    });
                     return serializer.ReadObject(stream) as TabGroupConfig;
                 }
             }
@@ -104,32 +107,6 @@ namespace SSMS_EnvTabs
             {
                 EnvTabsLog.Info($"Config load failed: {ex.Message}");
                 return null;
-            }
-        }
-        public static void Save(TabGroupConfig config)
-        {
-            try
-            {
-                EnsureDefaultConfigExists();
-                string path = GetUserConfigPath();
-                string json = TabGroupConfigLoader.Serialize(config);
-                File.WriteAllText(path, json);
-            }
-            catch (Exception ex)
-            {
-                EnvTabsLog.Error($"Failed to save config: {ex.Message}");
-            }
-        }
-
-        private static string Serialize(TabGroupConfig config)
-        {
-            // Simple serialization helper
-            // using Newtonsoft or DataContractJsonSerializer
-            using (var ms = new System.IO.MemoryStream())
-            {
-                var ser = new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(TabGroupConfig));
-                ser.WriteObject(ms, config);
-                return System.Text.Encoding.UTF8.GetString(ms.ToArray());
             }
         }
     }

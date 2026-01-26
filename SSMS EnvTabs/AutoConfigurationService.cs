@@ -11,6 +11,11 @@ namespace SSMS_EnvTabs
     {
         private static readonly HashSet<string> suppressedConnections = new HashSet<string>();
 
+        public static void ClearSuppressed()
+        {
+            suppressedConnections.Clear();
+        }
+
         public static void ProposeNewRule(TabGroupConfig config, string server, string database)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -25,36 +30,82 @@ namespace SSMS_EnvTabs
             bool useDb = mode.IndexOf("db", System.StringComparison.OrdinalIgnoreCase) >= 0;
 
             string connectionKey = useDb ? $"{server}::{database}" : server;
-            if (suppressedConnections.Contains(connectionKey)) return;
+            
+            // Check if already configured (in strict memory) to avoid duplicate prompt if re-triggered quickly
+            // Though RdtEventManager should handle this via "hasMatchingRule" check.
 
-            // Apply immediately (per user requirement "regardless it should write the json")
-            AddRuleAndSave(config, server, database, useDb);
-
-            // Prompt to edit
-            if (config.Settings.EnableConfigurePrompt)
+            if (suppressedConnections.Contains(connectionKey)) 
             {
-                string msg = $"SSMS EnvTabs Auto-Configuration\n\nA new tab grouping rule has been added for:\nServer: {server}\nDatabase: {(useDb ? database : "(any)")}\n\nDo you want to edit the configuration file now?";
-                DialogResult result = MessageBox.Show(msg, "EnvTabs Configuration Updated", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-
-                if (result == DialogResult.Yes)
-                {
-                    OpenConfigInEditor();
-                }
+                EnvTabsLog.Info($"AutoConfig: Suppressed key {connectionKey}");
+                return;
             }
 
+            // Prepare suggested values
+            int nextColor = FindNextColorValues(config);
+            string suggestedName = useDb && !string.IsNullOrWhiteSpace(database) ? $"{server}.{database}" : server;
+
+            EnvTabsLog.Info($"AutoConfig: Proposing new rule for {connectionKey}. Color={nextColor}, Name={suggestedName}, Prompt={config.Settings.EnableConfigurePrompt}");
+            
+            // Step 1: ALWAYS Create and Save the rule immediately (Requirement: "rule should be written... right away")
+            var newRule = AddRuleAndSave(config, server, database, useDb, suggestedName, nextColor);
+            
+            // Mark as suppressed immediately so we don't re-enter if RDT events fire again while dialog is open or after
             suppressedConnections.Add(connectionKey);
+
+            // Silent mode enabled? Or Prompt?
+            if (config.Settings.EnableConfigurePrompt)
+            {
+                try
+                {
+                    EnvTabsLog.Info("AutoConfig: Opening prompt dialog...");
+                    // Step 2: Prompt to edit the JUST CREATED rule
+                    // We use newRule.ColorIndex because AddRuleAndSave might have adjusted it if we add more logic, 
+                    // but currently it just uses what we passed.
+                    using (var dlg = new NewRuleDialog(server, database, suggestedName, nextColor))
+                    {
+                        // To avoid "Color goes away" on Cancel:
+                        // We must ensure that we DO NOT trigger a save/write if canceled.
+                        // And we should ensure the initial save was enough.
+                        
+                        var result = dlg.ShowDialog();
+                        EnvTabsLog.Info($"AutoConfig: Dialog result = {result}");
+
+                        if (result == DialogResult.OK || result == DialogResult.Yes) 
+                        {
+                             // User wants to change it
+                             if (dlg.RuleName != newRule.GroupName || dlg.SelectedColorIndex != newRule.ColorIndex)
+                             {
+                                 newRule.GroupName = dlg.RuleName;
+                                 newRule.ColorIndex = dlg.SelectedColorIndex;
+                                 SaveConfig(config);
+                             }
+                             
+                             if (result == DialogResult.Yes)
+                             {
+                                 OpenConfigInEditor();
+                             }
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    EnvTabsLog.Error($"AutoConfig: Error showing prompt: {ex}");
+                }
+            }
         }
 
-        private static void AddRuleAndSave(TabGroupConfig config, string server, string database, bool useDb)
+        private static TabGroupRule AddRuleAndSave(TabGroupConfig config, string server, string database, bool useDb, string groupName, int colorIndex)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            // Calculate new values
-            int nextColor = FindNextColorValues(config);
-            string groupName = useDb && !string.IsNullOrWhiteSpace(database) ? $"{server}.{database}" : server;
+            // Check if we should remove the default example rule
+            var exampleRule = config.Groups.FirstOrDefault(g => g.GroupName == "Example: Exact Match");
+            if (exampleRule != null)
+            {
+                config.Groups.Remove(exampleRule);
+            }
             
             // Renumber priorities: existing rules move to 20, 30, 40...
-            // Sort existing by priority
             var sorted = config.Groups.OrderBy(x => x.Priority).ToList();
             int currentBase = 20;
             foreach (var rule in sorted)
@@ -70,13 +121,15 @@ namespace SSMS_EnvTabs
                 Server = server,
                 Database = useDb ? (database ?? "%") : "%",
                 Priority = 10,
-                ColorIndex = nextColor
+                ColorIndex = colorIndex
             };
 
             config.Groups.Add(newRule);
             
             // Save
             SaveConfig(config);
+
+            return newRule;
         }
 
         private static void OpenConfigInEditor()
@@ -88,16 +141,18 @@ namespace SSMS_EnvTabs
 
         private static int FindNextColorValues(TabGroupConfig config)
         {
-            // Simple heuristic: round robin 0-15 based on usage count, or just first unused.
-            // Requirement: "first color that doesn't appear in the color index (skipping -1, just 0-16)"
+            // Requirement 1: "First available" - find a color not currently used.
+            // Requirement 2: Strict "Fill the gap" logic without jumping.
+            
             var used = new HashSet<int>(config.Groups.Select(x => x.ColorIndex));
             
+            // Find first hole in 0-15
             for (int i = 0; i <= 15; i++)
             {
                 if (!used.Contains(i)) return i;
             }
 
-            // If all used, pick random or 0
+            // If all used, return 0
             return 0;
         }
 
@@ -112,11 +167,19 @@ namespace SSMS_EnvTabs
                 });
 
                 using (var stream = new MemoryStream())
-                using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, System.Text.Encoding.UTF8, true, true, "  "))
                 {
-                    serializer.WriteObject(writer, config);
-                    writer.Flush();
-                    File.WriteAllBytes(path, stream.ToArray());
+                    using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, System.Text.Encoding.UTF8, true, true, "  "))
+                    {
+                        serializer.WriteObject(writer, config);
+                        writer.Flush();
+                    }
+                    
+                    // JsonReaderWriterFactory/DataContractJsonSerializer escapes forward slashes as \/.
+                    // We decode to string, replace them for readability, and write back.
+                    string json = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+                    json = json.Replace("\\/", "/");
+                    
+                    File.WriteAllText(path, json, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
                 }
             }
             catch (System.Exception ex)

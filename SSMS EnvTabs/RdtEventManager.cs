@@ -29,6 +29,9 @@ namespace SSMS_EnvTabs
         private uint selectionEventsCookie;
 
         private readonly Dictionary<uint, int> renameRetryCounts = new Dictionary<uint, int>();
+        private FileSystemWatcher configWatcher;
+        private CancellationTokenSource debounceCts;
+        private readonly object debounceLock = new object();
 
         private TabGroupConfig cachedConfig;
         private DateTime cachedConfigLastWriteUtc;
@@ -125,11 +128,43 @@ namespace SSMS_EnvTabs
                     EnvTabsLog.Info($"RdtEventManager: failed to subscribe selection events: {ex.Message}");
                 }
             }
+
+            try
+            {
+                string configPath = TabGroupConfigLoader.GetUserConfigPath();
+                string configDir = Path.GetDirectoryName(configPath);
+                if (Directory.Exists(configDir))
+                {
+                    configWatcher = new FileSystemWatcher(configDir, "TabGroupConfig.json");
+                    configWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size | NotifyFilters.FileName;
+                    configWatcher.Changed += OnConfigChanged;
+                    configWatcher.Created += OnConfigChanged;
+                    configWatcher.Renamed += OnConfigRenamed;
+                    configWatcher.EnableRaisingEvents = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"RdtEventManager: failed to start config watcher: {ex.Message}");
+            }
+        }
+
+        private void OnConfigRenamed(object sender, RenamedEventArgs e)
+        {
+            OnConfigChanged(sender, e);
         }
 
         public void Dispose()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            try
+            {
+                configWatcher?.Dispose();
+                debounceCts?.Cancel();
+                debounceCts?.Dispose();
+            }
+            catch { }
 
             try
             {
@@ -171,6 +206,94 @@ namespace SSMS_EnvTabs
             }
         }
 
+        private void OnConfigChanged(object sender, FileSystemEventArgs e)
+        {
+            try
+            {
+                EnvTabsLog.Info($"Config file file system event: {e.ChangeType} - {e.FullPath}");
+                
+                // Debounce logic
+                CancellationToken token;
+                lock (debounceLock)
+                {
+                    debounceCts?.Cancel();
+                    debounceCts = new CancellationTokenSource();
+                    token = debounceCts.Token;
+                }
+
+                _ = package.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(500, token);
+                        await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
+                        ReloadAndApplyConfig();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Ignored
+                    }
+                    catch (Exception ex)
+                    {
+                        EnvTabsLog.Info($"Config reload task failed: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"OnConfigChanged error: {ex.Message}");
+            }
+        }
+
+        private void ReloadAndApplyConfig()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            EnvTabsLog.Info("Configuration changed, reloading...");
+
+            // Invalidate cache
+            cachedConfig = null;
+            // Clear suppressed "do not ask again" connections so that if user removed a rule, we effectively reset the "ignore" state
+            // and will prompt again if they connect to it.
+            AutoConfigurationService.ClearSuppressed();
+
+            var config = LoadConfigOrNull();
+            var rules = cachedRules; // LoadConfigOrNull updates cachedRules
+
+            if (config == null) return;
+
+            var docs = GetOpenDocumentsSnapshot();
+
+            // Rename
+            int renamedCount = 0;
+            foreach (var doc in docs)
+            {
+                try
+                {
+                     if (!string.IsNullOrWhiteSpace(doc.Server))
+                     {
+                         renamedCount += TabRenamer.ApplyRenamesOrThrow(new[] { (doc.Cookie, doc.Frame, doc.Server, doc.Database, doc.Caption) }, rules);
+                     }
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Reload rename failed for {doc.Moniker}: {ex.Message}");
+                }
+            }
+
+            // Color
+            if (config.Settings?.EnableAutoColor == true)
+            {
+                try
+                {
+                    colorWriter.UpdateFromSnapshot(docs, rules);
+                }
+                catch (Exception ex)
+                {
+                     EnvTabsLog.Info($"Reload color update failed: {ex.Message}");
+                }
+            }
+        }
+
         private TabGroupConfig LoadConfigOrNull()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -193,6 +316,12 @@ namespace SSMS_EnvTabs
                 }
 
                 var loaded = TabGroupConfigLoader.LoadOrNull();
+                
+                if (loaded != null && loaded.Settings != null)
+                {
+                    EnvTabsLog.Enabled = loaded.Settings.EnableLogging;
+                }
+
                 cachedConfig = loaded;
                 cachedConfigLastWriteUtc = lastWriteUtc;
                 cachedRules = TabRuleMatcher.CompileRules(loaded);
@@ -212,8 +341,6 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             
-            // Too verbose: EnvTabsLog.Info($"HandlePotentialChange: cookie={docCookie} reason={reason}");
-
             var config = LoadConfigOrNull();
             if (config == null)
             {
@@ -221,10 +348,7 @@ namespace SSMS_EnvTabs
             }
 
             var rules = cachedRules ?? new List<TabRuleMatcher.CompiledRule>();
-            if (rules.Count == 0)
-            {
-                return true;
-            }
+            // If rules.Count == 0, we still proceed because we might need to AutoConfigure/ProposeNewRule
 
             bool needsRetry = false;
             int renamedCount = 0;
@@ -250,8 +374,12 @@ namespace SSMS_EnvTabs
                         {
                             renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { (docCookie, frame, server, database, caption) }, rules);
                             
-                            // Auto-Configure logic if no rule matched and not renamed
-                            if (renamedCount == 0 && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
+                            // Check for match explicitly to avoid duplicate rules if rename fails
+                            string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
+                            bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup);
+
+                            // Auto-Configure logic if no rule matched
+                            if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
                             {
                                 // Check if this server/db actually matched any existing rule?
                                 // TabRenamer returns 0 if no match found.
@@ -283,7 +411,6 @@ namespace SSMS_EnvTabs
             }
 
             bool shouldUpdateColor = renamedCount > 0 
-                || (reason != null && reason.IndexOf("FirstDocumentLock", StringComparison.OrdinalIgnoreCase) >= 0)
                 || (reason != null && reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0);
 
             if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
@@ -810,27 +937,8 @@ namespace SSMS_EnvTabs
         }
 
         // --- RDT events ---
-
         public int OnAfterFirstDocumentLock(uint docCookie, uint dwRDTLockType, uint dwReadLocksRemaining, uint dwEditLocksRemaining)
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            string moniker = TryGetMonikerFromCookie(docCookie);
-            if (!string.IsNullOrWhiteSpace(moniker))
-            {
-                IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
-                if (frame != null)
-                {
-                    TryHookDocViewConnectionEvents(docCookie, frame);
-                    LogFrameCaptions(frame, "FirstDocumentLock");
-                    bool done = HandlePotentialChange(docCookie, frame, reason: "FirstDocumentLock");
-                    if (!done)
-                    {
-                        ScheduleRenameRetry(docCookie, "FirstDocumentLock");
-                    }
-                }
-            }
-
             return VSConstants.S_OK;
         }
 
@@ -854,8 +962,6 @@ namespace SSMS_EnvTabs
         public int OnAfterAttributeChangeEx(uint docCookie, uint grfAttribs, IVsHierarchy pHierOld, uint itemidOld, string pszMkDocumentOld, IVsHierarchy pHierNew, uint itemidNew, string pszMkDocumentNew)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-
-            // EnvTabsLog.Info($"OnAfterAttributeChangeEx: cookie={docCookie} attribs={grfAttribs} old={pszMkDocumentOld} new={pszMkDocumentNew}");
 
             string moniker = pszMkDocumentNew;
             if (string.IsNullOrWhiteSpace(moniker))
@@ -906,39 +1012,21 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            // EnvTabsLog.Info($"OnAfterAttributeChange: cookie={docCookie} attribs={grfAttribs}");
-
             string moniker = TryGetMonikerFromCookie(docCookie);
             if (!string.IsNullOrWhiteSpace(moniker))
             {
                 IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
                 if (frame != null)
                 {
-                    // Pass "force=true" semantics via the reason string or just rely on ScheduleRenameRetry
-                    // The issue is that HandlePotentialChange calls IsRenameEligible which expects "SQLQueryX.sql" format OR already renamed format.
-                    // But if SSMS resets to "SQLQuery1.sql" (no connection info), IsRenameEligible=true, but TryGetConnectionInfo=false -> needsRetry=true.
-                    
                     bool done = HandlePotentialChange(docCookie, frame, reason: "AttributeChange");
                     
-                    // If not successfully renamed (e.g. because connection info missing), schedule retries
+                    // Force a retry if it's an AttributeChange, because the caption is likely stale.
                     if (!done)
                     {
                         ScheduleRenameRetry(docCookie, "AttributeChange");
                     }
                     else
                     {
-                        // Even if "done" is true (meaning we processed it), if we just renamed it back to "SQLQuery1.sql" because connection info was missing...
-                        // Wait, HandlePotentialChange only returns true if it *successfully* renamed (ApplyRenamesOrThrow) OR if it decided no rename needed.
-                        // If connection info is missing, it returns false (needsRetry).
-                        // So logic holds.
-                        
-                        // BUT: What if IsRenameEligible returns false? (e.g. caption="Previously Renamed Tab")
-                        // If user changes connection, caption might momentarily stay "Previously Renamed Tab".
-                        // IsRenameEligible checks for "SQLQuery...". It returns FALSE for "Previously Renamed Tab".
-                        // So HandlePotentialChange returns TRUE (early exit).
-                        // And we never retry.
-                        
-                        // FIX: We must force a retry if it's an AttributeChange, because the caption is likely STALE.
                         ScheduleRenameRetry(docCookie, "AttributeChange:Force");
                     }
                 }
@@ -967,7 +1055,7 @@ namespace SSMS_EnvTabs
                     
                     if (cookie == 0)
                     {
-                         // EnvTabsLog.Info($"ActiveFrameChanged: Found frame but no cookie. Moniker='{moniker}'");
+                         // Found frame but no cookie
                     }
                     else
                     {

@@ -15,13 +15,10 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "settings", IsRequired = false, Order = 2)]
         public TabGroupSettings Settings { get; set; } = new TabGroupSettings();
 
-        [DataMember(Name = "documentation", IsRequired = false, Order = 3)]
-        public Dictionary<string, string> Documentation { get; set; }
+        [DataMember(Name = "help", IsRequired = false, Order = 3)]
+        public string Help { get; set; }
 
-        [DataMember(Name = "colors", IsRequired = false, Order = 4)]
-        public Dictionary<string, string> Colors { get; set; }
-
-        [DataMember(Name = "groups", IsRequired = false, Order = 5)]
+        [DataMember(Name = "groups", IsRequired = false, Order = 4)]
         public List<TabGroupRule> Groups { get; set; } = new List<TabGroupRule>();
     }
 
@@ -39,6 +36,9 @@ namespace SSMS_EnvTabs
 
         [DataMember(Name = "enableConfigurePrompt", IsRequired = false, Order = 3)]
         public bool EnableConfigurePrompt { get; set; } = true;
+
+        [DataMember(Name = "enableLogging", IsRequired = false, Order = 4)]
+        public bool EnableLogging { get; set; } = true;
     }
 
     [DataContract]

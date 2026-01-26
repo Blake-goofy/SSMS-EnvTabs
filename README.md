@@ -1,6 +1,8 @@
 # SSMS EnvTabs
 
-A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatically organizes and colors your query tabs based on server and database connections. Keep your production, QA, and development environments visually distinct and easily identifiable.
+A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatically names and colors your query tabs based on server and database connections. Keep your production, QA, and development environments visually distinct and easily identifiable.
+
+![SSMS EnvTabs Demo](images/tab-colors.png)
 
 ![SSMS Version](https://img.shields.io/badge/SSMS-22.0%2B-blue)
 ![.NET Framework](https://img.shields.io/badge/.NET-4.7.2%2B-purple)
@@ -14,35 +16,25 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 - **Auto-Configuration** - Automatically create rules for new connections
 - **Priority-Based** - Control which rules match first with priority ordering
 
-## Quick Start
+## Getting Started
 
-### Installation
+1.  **Install**: Download the latest `.vsix` from [GitHub Releases](https://github.com/Blake-goofy/SSMS-EnvTabs/releases) and run the installer.
+2.  **Enable Coloring**: In SSMS, ensure *Tools > Options > Environment > Tabs and Windows > "Color document tabs by regular expression"* is selected.
+3.  **Configure**: Go to **Tools > EnvTabs: Configure Rules...** to define your connection groups.
 
-1. Download the latest `.vsix` file from [Releases](https://github.com/Blake-goofy/SSMS-EnvTabs/releases)
-2. Close SSMS completely
-3. Double-click the `.vsix` file and click **Install**
-4. Launch SSMS and start working!
+### Example Configuration
 
-**Requirements:** SSMS 22.0+ and .NET Framework 4.7.2+
-
-### Basic Usage
-
-1. **Open Configuration**: In SSMS, go to **Tools** → **SSMS EnvTabs** → **Open Configuration**
-2. **Edit Rules**: Configure your server/database patterns and colors
-3. **Connect & Work**: Query tabs will automatically be renamed and colored based on your rules
-
-Example configuration:
 ```json
 {
   "settings": {
     "enableAutoRename": true,
-    "enableAutoColor": true
+    "enableAutoColor": true,
+    "autoConfigure": "server db"
   },
   "groups": [
     {
       "groupName": "Prod",
       "server": "%PROD%",
-      "database": "%",
       "priority": 10,
       "colorIndex": 3
     }
@@ -52,33 +44,20 @@ Example configuration:
 
 ## Documentation
 
-For detailed documentation, please visit the [Wiki](wiki/):
+Full documentation is available in the [GitHub Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
-- **[Installation Guide](wiki/Installation-Guide.md)** - Detailed installation instructions and troubleshooting
-- **[Configuration Guide](wiki/Configuration-Guide.md)** - Complete configuration reference with examples
-- **[Color Reference](wiki/Color-Reference.md)** - All 16 available colors
-- **[Wildcard Patterns](wiki/Wildcard-Patterns.md)** - Pattern matching guide
-- **[Hot it works](wiki/Hot-it-works.md)** - How EnvTabs uses SSMS color tabs and salt-based hashing
-- **[Troubleshooting](wiki/Troubleshooting.md)** - Common issues and solutions
-- **[Tips & Best Practices](wiki/Tips-and-Best-Practices.md)** - Optimize your workflow
+*   **[Installation Guide](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Installation-Guide)** - Setup instructions and troubleshooting.
+*   **[Configuration Guide](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)** - Complete reference for settings and rules.
+*   **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)** - Visual guide for the 16 available colors.
+*   **[Wildcard Patterns](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Wildcard-Patterns)** - How to use SQL-like wildcards for matching.
+*   **[How it works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)** - Technical deep dive into the coloring mechanism.
+*   **[Troubleshooting](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Troubleshooting)** - Common issues and solutions.
 
-## Contributing
+## Support & Contributing
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-### Building from Source
-
-```bash
-git clone https://github.com/Blake-goofy/SSMS-EnvTabs.git
-cd SSMS-EnvTabs
-# Open SSMS EnvTabs.sln in Visual Studio 2019+
-# Build solution (requires Visual Studio SDK)
-```
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/Blake-goofy/SSMS-EnvTabs/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Blake-goofy/SSMS-EnvTabs/discussions)
+*   **Issues**: [GitHub Issues](https://github.com/Blake-goofy/SSMS-EnvTabs/issues)
+*   **Discussions**: [GitHub Discussions](https://github.com/Blake-goofy/SSMS-EnvTabs/discussions)
+*   **Source Code**: To build from source, clone the repo and open `SSMS EnvTabs.sln` in Visual Studio 2019+ (VS SDK required).
 
 ## Author
 

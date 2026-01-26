@@ -1,39 +1,14 @@
 {
-  "description": "Configuration for SSMS EnvTabs. Controls how query tabs are renamed and colored based on server/database connection.",
-  "version": "1.2.0",
+  "description": "Configuration for SSMS EnvTabs. Controls how query tabs are renamed and colored based on server database connection.",
+  "version": "1.2.1",
   "settings": {
     "enableAutoRename": true,
     "enableAutoColor": true,
     "autoConfigure": "server db",
-    "enableConfigurePrompt": true
+    "enableConfigurePrompt": true,
+    "enableLogging": true
   },
-  "documentation": {
-    "enableAutoRename": "If true, only 'SQLQueryX.sql' tabs will be renamed. Saved filenames will not be touched.",
-    "enableAutoColor": "If true, tabs are colored based on the ColorIndex (0-15) matched below.",
-    "autoConfigure": "Controls automatic rule creation for new connections. Values: 'off' (disabled), 'server' (group by server only), 'server db' (group by server and database).",
-    "enableConfigurePrompt": "If true, asks if you want to edit the configuration file after a new rule is automatically added.",
-    "wildcards": "Server/Database fields support SQL LIKE syntax (%) for wildcards.",
-    "priority": "Rules are checked in Priority order (lowest number first). First match wins."
-  },
-  "colors": {
-    "Reference": "Use these IDs in the 'colorIndex' field below.",
-    "0": "Lavender",
-    "1": "Gold",
-    "2": "Cyan",
-    "3": "Burgundy",
-    "4": "Green",
-    "5": "Brown",
-    "6": "Royal Blue",
-    "7": "Pumpkin",
-    "8": "Gray",
-    "9": "Volt",
-    "10": "Teal",
-    "11": "Magenta",
-    "12": "Mint",
-    "13": "Dark Brown",
-    "14": "Blue",
-    "15": "Pink"
-  },
+  "help": "https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide",
   "groups": [
     {
       "groupName": "Example: Exact Match",
@@ -41,20 +16,6 @@
       "database": "MyDatabase",
       "priority": 10,
       "colorIndex": 9
-    },
-    {
-      "groupName": "Prod",
-      "server": "%PROD%",
-      "database": "%",
-      "priority": 20,
-      "colorIndex": 3
-    },
-    {
-      "groupName": "QA",
-      "server": "%QA%",
-      "database": "%",
-      "priority": 30,
-      "colorIndex": 1
     }
   ]
 }

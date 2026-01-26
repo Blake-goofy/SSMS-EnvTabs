@@ -17,7 +17,6 @@ These files are designed to be published to the GitHub Wiki for this repository.
 - **[Color Reference](Color-Reference.md)** - All 16 available colors with examples
 - **[Wildcard Patterns](Wildcard-Patterns.md)** - SQL LIKE pattern matching guide
 - **[Troubleshooting](Troubleshooting.md)** - Common issues and solutions
-- **[Tips & Best Practices](Tips-and-Best-Practices.md)** - Workflow optimization
 
 ## Publishing to GitHub Wiki
 
