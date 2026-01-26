@@ -34,6 +34,18 @@ namespace SSMS_EnvTabs
             WriteIfChanged(configPath, newContent);
         }
 
+        internal string BuildGeneratedBlockPreview(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
+        {
+            if (docs == null || rules == null || rules.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var groupToPaths = BuildGroupPathMap(docs, rules);
+            var lines = BuildGeneratedBlock(groupToPaths, rules);
+            return string.Join("\n", lines);
+        }
+
         private Dictionary<string, SortedSet<string>> BuildGroupPathMap(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
         {
             var map = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);

@@ -12,6 +12,16 @@ namespace SSMS_EnvTabs
     {
         private static readonly HashSet<string> suppressedConnections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        internal static event Action<DialogClosedInfo> DialogClosed;
+
+        internal sealed class DialogClosedInfo
+        {
+            public DialogResult Result { get; set; }
+            public string Server { get; set; }
+            public string Database { get; set; }
+            public bool ChangesApplied { get; set; }
+        }
+
         public static void ClearSuppressed()
         {
             suppressedConnections.Clear();
@@ -70,22 +80,34 @@ namespace SSMS_EnvTabs
                         
                         var result = dlg.ShowDialog();
                         EnvTabsLog.Info($"AutoConfig: Dialog result = {result}");
-
+                        bool changesApplied = false;
                         if (result == DialogResult.OK || result == DialogResult.Yes) 
                         {
-                             // User wants to change it
-                             if (dlg.RuleName != newRule.GroupName || dlg.SelectedColorIndex != newRule.ColorIndex)
-                             {
-                                 newRule.GroupName = dlg.RuleName;
-                                 newRule.ColorIndex = dlg.SelectedColorIndex;
-                                 SaveConfig(config);
-                             }
+                            string updatedName = string.IsNullOrWhiteSpace(dlg.RuleName) ? newRule.GroupName : dlg.RuleName;
+                            int updatedColor = dlg.SelectedColorIndex;
+
+                            // User wants to change it
+                            if (updatedName != newRule.GroupName || updatedColor != newRule.ColorIndex)
+                            {
+                                newRule.GroupName = updatedName;
+                                newRule.ColorIndex = updatedColor;
+                                SaveConfig(config);
+                                changesApplied = true;
+                            }
                              
-                             if (result == DialogResult.Yes)
-                             {
-                                 OpenConfigInEditor();
-                             }
+                            if (result == DialogResult.Yes)
+                            {
+                                OpenConfigInEditor();
+                            }
                         }
+
+                        DialogClosed?.Invoke(new DialogClosedInfo
+                        {
+                            Result = result,
+                            Server = server,
+                            Database = database,
+                            ChangesApplied = changesApplied
+                        });
                     }
                 }
                 catch (System.Exception ex)
@@ -129,7 +151,6 @@ namespace SSMS_EnvTabs
             
             // Save
             SaveConfig(config);
-
             return newRule;
         }
 

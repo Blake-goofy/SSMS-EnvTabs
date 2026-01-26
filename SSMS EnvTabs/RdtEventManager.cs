@@ -41,6 +41,8 @@ namespace SSMS_EnvTabs
         private DateTime cachedConfigLastWriteUtc;
         private List<TabRuleMatcher.CompiledRule> cachedRules;
 
+        private DateTime suppressColorUpdatesUntilUtc;
+
         private sealed class ReflectionEventSubscription : IDisposable
         {
             private readonly object target;
@@ -112,6 +114,8 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
+            AutoConfigurationService.DialogClosed += OnAutoConfigDialogClosed;
+
             try
             {
                 rdt.AdviseRunningDocTableEvents(this, out rdtEventsCookie);
@@ -156,6 +160,8 @@ namespace SSMS_EnvTabs
         public void Dispose()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            AutoConfigurationService.DialogClosed -= OnAutoConfigDialogClosed;
 
             try
             {
@@ -292,8 +298,15 @@ namespace SSMS_EnvTabs
             {
                 try
                 {
-                    var docs = GetOpenDocumentsSnapshot();
-                    colorWriter.UpdateFromSnapshot(docs, rules);
+                    if (!IsColorUpdateSuppressed())
+                    {
+                        var docs = GetOpenDocumentsSnapshot();
+                        colorWriter.UpdateFromSnapshot(docs, rules);
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info($"Color update suppressed ({reason})");
+                    }
                 }
                 catch (Exception ex)
                 {

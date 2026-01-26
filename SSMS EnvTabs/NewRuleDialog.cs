@@ -62,6 +62,8 @@ namespace SSMS_EnvTabs
             ApplyVsTheme();
             
             txtName.Text = suggestedName;
+            RuleName = suggestedName;
+            SelectedColorIndex = suggestedColorIndex;
         }
 
         private void InitializeComponent(string server, string database, int suggestedColorIndex)
@@ -152,6 +154,18 @@ namespace SSMS_EnvTabs
             
             // Note: DataSource automatically sets SelectedIndex to 0 if list is not empty.
             // We rely on that behavior since orderedList[0] is our desired selection.
+
+            this.FormClosing += (s, e) =>
+            {
+                if (this.DialogResult == DialogResult.OK || this.DialogResult == DialogResult.Yes)
+                {
+                    RuleName = txtName.Text;
+                    if (cmbColor.SelectedItem is ColorItem item)
+                    {
+                        SelectedColorIndex = item.Index;
+                    }
+                }
+            };
 
             btnSave = new Button { Text = "Save", Location = new Point(90, 190), Size = new Size(90, 30), DialogResult = DialogResult.OK };
             btnSave.Click += (s, e) => { RuleName = txtName.Text; SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; };

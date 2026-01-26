@@ -9,6 +9,58 @@ namespace SSMS_EnvTabs
 {
     internal sealed partial class RdtEventManager
     {
+        private void OnAutoConfigDialogClosed(AutoConfigurationService.DialogClosedInfo info)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            string reason = info == null
+                ? "DialogClosed"
+                : $"Result={info.Result}, Server={info.Server}, Database={info.Database}, ChangesApplied={info.ChangesApplied}";
+
+            LogColorSnapshot(reason);
+
+            if (info != null && !info.ChangesApplied)
+            {
+                UpdateColorOnly("DialogClosed", force: true);
+                // Avoid immediately overwriting regex with a partial snapshot after dialog close.
+                suppressColorUpdatesUntilUtc = DateTime.UtcNow.AddSeconds(2);
+            }
+        }
+
+        private bool IsColorUpdateSuppressed()
+        {
+            return DateTime.UtcNow < suppressColorUpdatesUntilUtc;
+        }
+
+        private void LogColorSnapshot(string reason)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            var config = LoadConfigOrNull();
+            var rules = cachedRules ?? new System.Collections.Generic.List<TabRuleMatcher.CompiledRule>();
+            var docs = GetOpenDocumentsSnapshot();
+
+            EnvTabsLog.Info($"Snapshot ({reason}) - Rules={rules.Count}, Tabs={docs.Count}, AutoColor={(config?.Settings?.EnableAutoColor == true)}");
+
+            foreach (var rule in rules)
+            {
+                EnvTabsLog.Info($"Rule: Name='{rule.GroupName}', Server='{rule.Server}', Database='{rule.Database}', Priority={rule.Priority}, ColorIndex={rule.ColorIndex}");
+            }
+
+            foreach (var doc in docs)
+            {
+                string fileName = null;
+                try { fileName = System.IO.Path.GetFileName(doc.Moniker); } catch { }
+                string group = TabRuleMatcher.MatchGroup(rules, doc.Server, doc.Database);
+                EnvTabsLog.Info($"Tab: Cookie={doc.Cookie}, Server='{doc.Server}', Database='{doc.Database}', Group='{group}', File='{fileName}', Moniker='{doc.Moniker}'");
+            }
+
+            string block = colorWriter.BuildGeneratedBlockPreview(docs, rules);
+            if (!string.IsNullOrWhiteSpace(block))
+            {
+                EnvTabsLog.Info("Regex Preview:\n" + block);
+            }
+        }
         private void OnConfigRenamed(object sender, RenamedEventArgs e)
         {
             OnConfigChanged(sender, e);
@@ -95,7 +147,14 @@ namespace SSMS_EnvTabs
             {
                 try
                 {
-                    colorWriter.UpdateFromSnapshot(docs, rules);
+                    if (!IsColorUpdateSuppressed())
+                    {
+                        colorWriter.UpdateFromSnapshot(docs, rules);
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info("Color update suppressed (ConfigReload)");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -147,9 +206,15 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private void UpdateColorOnly(string reason)
+        private void UpdateColorOnly(string reason, bool force = false)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (!force && IsColorUpdateSuppressed())
+            {
+                EnvTabsLog.Info($"Color update suppressed ({reason})");
+                return;
+            }
 
             var config = LoadConfigOrNull();
             if (config?.Settings?.EnableAutoColor != true)
