@@ -74,10 +74,6 @@ cd SSMS-EnvTabs
 # Build solution (requires Visual Studio SDK)
 ```
 
-## License
-
-[Add license information here]
-
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/Blake-goofy/SSMS-EnvTabs/issues)
