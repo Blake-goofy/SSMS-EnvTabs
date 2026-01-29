@@ -22,7 +22,7 @@ namespace SSMS_EnvTabs
                 string fullRegex = baseRegex + "(?#salt:" + salt + ")";
                 
                 int hash = GetSsmsStableHashCode(fullRegex);
-                int calculatedIndex = Math.Abs(hash) % 16;
+                int calculatedIndex = GetColorIndex(hash);
                 
                 if (calculatedIndex == targetColorIndex)
                 {
@@ -61,6 +61,11 @@ namespace SSMS_EnvTabs
 
                 return hash1 + (hash2 * 1566083941);
             }
+        }
+
+        public static int GetColorIndex(int hash)
+        {
+            return (int)((uint)hash % 16);
         }
     }
 }

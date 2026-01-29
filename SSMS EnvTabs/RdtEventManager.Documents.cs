@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace SSMS_EnvTabs
 {
@@ -20,11 +21,6 @@ namespace SSMS_EnvTabs
                 return false;
             }
 
-            if (!RdtEventManager.SuppressVerboseLogs)
-            {
-                EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetConnectionInfo - Starting (DocView only)");
-            }
-
             try
             {
                 // 1. DocView/Reflection Method (Main attempt)
@@ -32,18 +28,7 @@ namespace SSMS_EnvTabs
                 {
                     server = docViewServer;
                     database = docViewDatabase;
-                    if (!RdtEventManager.SuppressVerboseLogs)
-                    {
-                        EnvTabsLog.Info($"RdtEventManager.Documents.cs::TryGetConnectionInfo - Main success. Server='{server}', Database='{database}'");
-                    }
                     return true;
-                }
-                else
-                {
-                    if (!RdtEventManager.SuppressVerboseLogs)
-                    {
-                        EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetConnectionInfo - Main failed or incomplete.");
-                    }
                 }
 
                 return false;
@@ -92,8 +77,7 @@ namespace SSMS_EnvTabs
                     }
                     else
                     {
-                        // Debug log to see why field might be missing
-                        EnvTabsLog.Info($"TryPopulateFromDocView: 'm_connection' field not found on type {docView.GetType().FullName}");
+                        // ignore
                     }
                 }
             }
@@ -298,17 +282,6 @@ namespace SSMS_EnvTabs
             return null;
         }
 
-        private void LogFrameCaptions(IVsWindowFrame frame, string reason)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            if (frame == null) return;
-
-            string caption = TryReadFrameCaption(frame) ?? string.Empty;
-            string editorCaption = TryReadFrameEditorCaption(frame) ?? string.Empty;
-            EnvTabsLog.Info($"Frame caption ({reason}): '{caption}' | editor='{editorCaption}'");
-        }
-
         private bool TryGetMonikerFromFrame(IVsWindowFrame frame, out string moniker)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -338,11 +311,6 @@ namespace SSMS_EnvTabs
 
             if (shellOpenDoc == null || string.IsNullOrWhiteSpace(moniker)) return null;
 
-            if (!RdtEventManager.SuppressVerboseLogs)
-            {
-                EnvTabsLog.Info($"RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main attempt (IsDocumentOpen). Moniker='{moniker}'");
-            }
-
             // Main attempt: IsDocumentOpen
             try
             {
@@ -350,26 +318,11 @@ namespace SSMS_EnvTabs
                 uint[] itemid = new uint[1];
                 if (shellOpenDoc.IsDocumentOpen(null, 0, moniker, ref logicalView, 0, out IVsUIHierarchy _, itemid, out IVsWindowFrame frame, out int isOpen) == VSConstants.S_OK && isOpen != 0)
                 {
-                    if (!RdtEventManager.SuppressVerboseLogs)
-                    {
-                        EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main success. Frame found.");
-                    }
                     return frame;
-                }
-                else
-                {
-                    if (!RdtEventManager.SuppressVerboseLogs)
-                    {
-                        EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main failed (not open or error).");
-                    }
                 }
             }
             catch(Exception ex)
             {
-                if (!RdtEventManager.SuppressVerboseLogs)
-                {
-                    EnvTabsLog.Info($"RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main exception: {ex.Message}");
-                }
                 return null;
             }
 
@@ -414,6 +367,21 @@ namespace SSMS_EnvTabs
             }
             catch {}
             return false;
+        }
+
+        private static bool IsSqlDocumentMoniker(string moniker)
+        {
+            if (string.IsNullOrWhiteSpace(moniker))
+            {
+                return false;
+            }
+
+            if (!Path.IsPathRooted(moniker))
+            {
+                return false;
+            }
+
+            return moniker.EndsWith(".sql", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

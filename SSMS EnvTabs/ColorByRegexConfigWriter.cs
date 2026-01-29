@@ -12,9 +12,18 @@ namespace SSMS_EnvTabs
     {
         private const string BeginMarker = "// SSMS EnvTabs: BEGIN generated";
         private const string EndMarker = "// SSMS EnvTabs: END generated";
+        private const int ResolveRetryMax = 6;
+        private const int ResolveRetryDelayMs = 500;
+        private const double CreationSkewSeconds = 2.0;
+        private const double CreationMaxWindowSeconds = 30.0;
 
         private string resolvedConfigPath;
         private DateTime? firstDocSeenUtc;
+        private bool resolveRetryScheduled;
+        private int resolveRetryCount;
+        private List<RdtEventManager.OpenDocumentInfo> lastDocsSnapshot;
+        private IReadOnlyList<TabRuleMatcher.CompiledRule> lastRulesSnapshot;
+        private IReadOnlyList<TabRuleMatcher.CompiledManualRule> lastManualRulesSnapshot;
 
         public void UpdateFromSnapshot(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules)
         {
@@ -24,29 +33,36 @@ namespace SSMS_EnvTabs
                 return;
             }
 
-            if (!firstDocSeenUtc.HasValue && docs.Any())
+            lastDocsSnapshot = docs as List<RdtEventManager.OpenDocumentInfo> ?? docs.ToList();
+            lastRulesSnapshot = rules;
+            lastManualRulesSnapshot = manualRules;
+
+            if (!firstDocSeenUtc.HasValue && lastDocsSnapshot.Count > 0)
             {
                 firstDocSeenUtc = DateTime.UtcNow;
             }
 
             var safeRules = rules ?? Array.Empty<TabRuleMatcher.CompiledRule>();
             bool hasManualRules = manualRules != null && manualRules.Count > 0;
-            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules={safeRules.Count}, ManualRules={(manualRules?.Count ?? 0)}, Docs={docs.Count()}");
+            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules={safeRules.Count}, ManualRules={(manualRules?.Count ?? 0)}, Docs={lastDocsSnapshot.Count}");
             if (safeRules.Count == 0 && !hasManualRules)
             {
                 EnvTabsLog.Info("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - No rules to write. Skipping.");
                 return;
             }
 
-            string configPath = ResolveConfigPath(docs.Select(d => d?.Moniker));
+            string configPath = ResolveConfigPath(lastDocsSnapshot.Select(d => d?.Moniker));
             if (string.IsNullOrWhiteSpace(configPath))
             {
                 EnvTabsLog.Info("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Config path not resolved. Skipping.");
+                ScheduleResolveRetryIfNeeded();
                 return;
             }
+            resolveRetryCount = 0;
+            resolveRetryScheduled = false;
             EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='{configPath}'");
 
-            var groupToPaths = safeRules.Count > 0 ? BuildGroupPathMap(docs, safeRules) : null;
+            var groupToPaths = safeRules.Count > 0 ? BuildGroupPathMap(lastDocsSnapshot, safeRules) : null;
             EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths={(groupToPaths?.Count ?? 0)}");
             string newContent = BuildConfigContent(configPath, groupToPaths, safeRules, manualRules);
             WriteIfChanged(configPath, newContent);
@@ -62,7 +78,7 @@ namespace SSMS_EnvTabs
         {
             var entries = new List<RegexEntry>();
 
-            // 1. Process Manual Rules
+            // Manual rules
             if (manualRules != null)
             {
                 foreach (var m in manualRules)
@@ -76,7 +92,6 @@ namespace SSMS_EnvTabs
                         }
                         catch
                         {
-                            // fallback
                             line = m.OriginalPattern;
                         }
                     }
@@ -84,7 +99,7 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            // 2. Process Connection Rules (Generated)
+            // Generated rules
             if (groupToPaths != null)
             {
                 foreach (var rule in rules)
@@ -97,14 +112,10 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            // 3. Sort
             var sortedEntries = entries.OrderBy(e => e.Priority).ToList();
 
-            // 4. Build Content
-            // We read the existing file to preserve anything OUTSIDE our markers (if any).
-            
+            // Preserve content outside markers.
             string existing = File.Exists(existingPath) ? File.ReadAllText(existingPath) : string.Empty;
-            
             var generatedLines = new List<string>();
 
             generatedLines.Add(BeginMarker);
@@ -164,8 +175,7 @@ namespace SSMS_EnvTabs
                     map[group] = set;
                 }
 
-                // Use only the filename for the regex to avoid path dependency issues
-                // and to support files moving between folders while keeping color.
+                // Use only the filename so colors follow file moves.
                 try 
                 {
                     string fileName = Path.GetFileName(doc.Moniker);
@@ -183,32 +193,6 @@ namespace SSMS_EnvTabs
             return map;
         }
 
-        private string BuildConfigContent(string configPath, Dictionary<string, SortedSet<string>> groupToPaths, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
-        {
-            var entries = new List<RegexEntry>();
-            if (groupToPaths != null)
-            {
-                foreach (var rule in rules)
-                {
-                    if (groupToPaths.TryGetValue(rule.GroupName, out var paths) && paths.Count > 0)
-                    {
-                        string line = BuildResolvedRegexLine(paths, rule);
-                        entries.Add(new RegexEntry { Pattern = line, Priority = rule.Priority });
-                    }
-                }
-            }
-             var sortedEntries = entries.OrderBy(e => e.Priority).ToList();
-             var generatedLines = new List<string>();
-            generatedLines.Add(BeginMarker);
-            foreach(var e in sortedEntries)
-            {
-                generatedLines.Add(e.Pattern);
-            }
-            generatedLines.Add(EndMarker);
-
-            string existing = File.Exists(configPath) ? File.ReadAllText(configPath) : string.Empty;
-            return ReplaceOrAppendBlock(existing, generatedLines);
-        }
         private static List<string> BuildGeneratedBlock(Dictionary<string, SortedSet<string>> groupToPaths, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
         {
             var lines = new List<string> { BeginMarker };
@@ -244,22 +228,19 @@ namespace SSMS_EnvTabs
                 escaped = pathList.Select(Regex.Escape);
             }
 
-            // Match filepath ending with one of the filenames.
+            // Match path ending with the filename.
             string baseRegex = $"(?:^|[\\\\/])(?:{string.Join("|", escaped)}){suffix}$";
 
-            // If the rule specifically asks for a specific ColorIndex (0-15), solve for salt
-            // Note: 0 is Lavender
+            // If the rule specifies a color index, solve for a salt.
             string salt = null;
             if (rule.ColorIndex >= 0)
             {
-                // Attempt to see if current salt (if any) already produces the right color
                 string currentFull = baseRegex;
                 int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(currentFull);
-                int currentColor = Math.Abs(currentHash) % 16;
+                int currentColor = TabGroupColorSolver.GetColorIndex(currentHash);
 
                 if (currentColor != rule.ColorIndex)
                 {
-                    // Need to find a new salt
                     string newSalt = TabGroupColorSolver.Solve(baseRegex, rule.ColorIndex);
                     if (newSalt != null)
                     {
@@ -357,6 +338,43 @@ namespace SSMS_EnvTabs
             return text.Replace("\r\n", "\n").Replace("\r", "\n");
         }
 
+        private void ScheduleResolveRetryIfNeeded()
+        {
+            if (resolveRetryScheduled)
+            {
+                return;
+            }
+
+            if (resolveRetryCount >= ResolveRetryMax)
+            {
+                return;
+            }
+
+            resolveRetryScheduled = true;
+            int attempt = ++resolveRetryCount;
+            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Resolve retry scheduled ({attempt}/{ResolveRetryMax}) in {ResolveRetryDelayMs}ms.");
+
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    await System.Threading.Tasks.Task.Delay(ResolveRetryDelayMs).ConfigureAwait(true);
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                    resolveRetryScheduled = false;
+
+                    if (lastDocsSnapshot != null)
+                    {
+                        UpdateFromSnapshot(lastDocsSnapshot, lastRulesSnapshot, lastManualRulesSnapshot);
+                    }
+                }
+                catch
+                {
+                    resolveRetryScheduled = false;
+                }
+            });
+        }
+
         private string ResolveConfigPath(IEnumerable<string> monikers)
         {
             if (!string.IsNullOrWhiteSpace(resolvedConfigPath) && File.Exists(resolvedConfigPath))
@@ -364,7 +382,7 @@ namespace SSMS_EnvTabs
                 return resolvedConfigPath;
             }
 
-            // 1. Try to deduce from open documents (most reliable if file is near them)
+            // Try from open documents first.
             foreach (var moniker in monikers ?? Enumerable.Empty<string>())
             {
                 string candidate = TryGetConfigPathFromMoniker(moniker);
@@ -375,9 +393,7 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            // 2. Scan Temp folder. 
-            // We do this every time if not found yet, because the file might be created later by SSMS.
-            // But we must ensure the scan is fast and doesn't crash.
+            // Scan Temp until the file appears.
             string fallback = TryScanTempForConfig(firstDocSeenUtc);
             if (!string.IsNullOrWhiteSpace(fallback))
             {
@@ -404,16 +420,15 @@ namespace SSMS_EnvTabs
                 }
 
                 var current = new DirectoryInfo(dir);
-                if (current.Exists && Regex.IsMatch(current.Name, "^v\\d+$", RegexOptions.IgnoreCase))
+
+                string guidRoot = TryGetTempGuidRoot(current);
+                if (!string.IsNullOrWhiteSpace(guidRoot))
                 {
-                    var tempGuidDir = current.Parent;
-                    if (tempGuidDir != null)
+                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryGetConfigPathFromMoniker - Temp GUID root='{guidRoot}'");
+                    string candidate = Path.Combine(guidRoot, "ColorByRegexConfig.txt");
+                    if (File.Exists(candidate))
                     {
-                        string candidate = Path.Combine(tempGuidDir.FullName, "ColorByRegexConfig.txt");
-                        if (File.Exists(candidate))
-                        {
-                            return candidate;
-                        }
+                        return candidate;
                     }
                 }
 
@@ -441,54 +456,51 @@ namespace SSMS_EnvTabs
         {
             try
             {
+                if (!referenceUtc.HasValue)
+                {
+                    EnvTabsLog.Info("ColorByRegexConfigWriter.cs::TryScanTempForConfig - No firstDocSeenUtc; skipping temp scan.");
+                    return null;
+                }
+
                 string temp = Path.GetTempPath();
                 if (string.IsNullOrWhiteSpace(temp) || !Directory.Exists(temp))
                 {
                     return null;
                 }
 
-                // SSMS typically places the file in a subdirectory of Temp.
-                // Searching recursively (AllDirectories) is dangerous due to permissions.
-                // We iterate top-level directories and look inside them.
-                
-                string bestCandidate = null;
-                double bestScore = double.MinValue;
+                // SSMS places the file in a GUID-named Temp subdirectory.
 
-                var dirs = Directory.GetDirectories(temp);
-                foreach (var dir in dirs)
+                var dirs = Directory.GetDirectories(temp)
+                    .Where(d => IsGuidDirectoryName(Path.GetFileName(d)))
+                    .Select(d => new { Dir = d, CreatedUtc = Directory.GetCreationTimeUtc(d) })
+                    .OrderBy(d => d.CreatedUtc)
+                    .ToList();
+
+                foreach (var entry in dirs)
                 {
                     try
                     {
-                        string candidate = Path.Combine(dir, "ColorByRegexConfig.txt");
-                        if (!File.Exists(candidate))
+                        string candidate = Path.Combine(entry.Dir, "ColorByRegexConfig.txt");
+                        bool fileExists = File.Exists(candidate);
+
+                        DateTime dirCreateUtc = entry.CreatedUtc;
+                        double deltaSeconds = (dirCreateUtc - referenceUtc.Value).TotalSeconds;
+
+                        // Skip folders outside the creation window.
+                        if (deltaSeconds < -CreationSkewSeconds)
                         {
                             continue;
                         }
 
-                        bool hasVersionFolder = Directory.GetDirectories(dir)
-                            .Select(d => Path.GetFileName(d))
-                            .Any(name => Regex.IsMatch(name ?? string.Empty, "^v\\d+$", RegexOptions.IgnoreCase));
-
-                        DateTime dirCreateUtc = Directory.GetCreationTimeUtc(dir);
-                        double secondsFromReference = referenceUtc.HasValue
-                            ? Math.Abs((dirCreateUtc - referenceUtc.Value).TotalSeconds)
-                            : double.PositiveInfinity;
-
-                        bool withinTimeWindow = !referenceUtc.HasValue || secondsFromReference <= 60;
-
-                        // Prefer dirs with version folder and creation time near the first doc open.
-                        // If no reference time, rely on write time and version folder presence.
-                        double writeUtcTicks = File.GetLastWriteTimeUtc(candidate).Ticks;
-                        double score = 0;
-                        score += hasVersionFolder ? 1000000 : 0;
-                        score += withinTimeWindow ? 100000 : 0;
-                        score -= referenceUtc.HasValue ? secondsFromReference : 0;
-                        score += writeUtcTicks / 10000000.0; // scaled
-
-                        if (score > bestScore)
+                        if (deltaSeconds > CreationMaxWindowSeconds)
                         {
-                            bestScore = score;
-                            bestCandidate = candidate;
+                            continue;
+                        }
+
+                        EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - FirstDocSeenUtc={referenceUtc:O}, RegexFolderCreateUtc={dirCreateUtc:O}, DeltaSeconds={deltaSeconds:0.###}, FileExists={fileExists}, Folder='{entry.Dir}'");
+                        if (fileExists)
+                        {
+                            return candidate;
                         }
                     }
                     catch
@@ -496,13 +508,53 @@ namespace SSMS_EnvTabs
                         // Ignore access errors
                     }
                 }
-
-                return bestCandidate;
+                EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - No candidate found. FirstDocSeenUtc={referenceUtc:O}");
+                return null;
             }
             catch
             {
                 return null;
             }
+        }
+
+        private static string TryGetTempGuidRoot(DirectoryInfo start)
+        {
+            if (start == null)
+            {
+                return null;
+            }
+
+            string tempRoot = Path.GetTempPath();
+            var current = start;
+            while (current != null)
+            {
+                if (IsGuidDirectoryName(current.Name))
+                {
+                    if (string.IsNullOrWhiteSpace(tempRoot))
+                    {
+                        return current.FullName;
+                    }
+
+                    if (current.FullName.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return current.FullName;
+                    }
+                }
+
+                current = current.Parent;
+            }
+
+            return null;
+        }
+
+        private static bool IsGuidDirectoryName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            return Guid.TryParse(name, out _);
         }
     }
 }
