@@ -29,15 +29,68 @@ namespace SSMS_EnvTabs
             }
         }
 
+        internal sealed class CompiledManualRule
+        {
+            public string GroupName { get; }
+            public int Priority { get; }
+            public int? ColorIndex { get; }
+            public Regex FileRegex { get; }
+            public string OriginalPattern { get; }
+
+            public CompiledManualRule(string groupName, string pattern, int priority, int? colorIndex)
+            {
+                GroupName = groupName;
+                OriginalPattern = pattern;
+                Priority = priority;
+                ColorIndex = colorIndex;
+                try
+                {
+                    FileRegex = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+                }
+                catch
+                {
+                    // Invalid regex
+                }
+            }
+        }
+
+        public static List<CompiledManualRule> CompileManualRules(TabGroupConfig config)
+        {
+            var list = new List<CompiledManualRule>();
+            if (config?.ManualRegexLines == null) return list;
+
+            foreach (var m in config.ManualRegexLines)
+            {
+                if (string.IsNullOrWhiteSpace(m.Pattern)) continue;
+                list.Add(new CompiledManualRule(m.GroupName, m.Pattern, m.Priority, m.ColorIndex));
+            }
+
+            return list.OrderBy(x => x.Priority).ToList();
+        }
+
+        public static CompiledManualRule MatchManual(IReadOnlyList<CompiledManualRule> manuals, string moniker)
+        {
+            if (manuals == null || string.IsNullOrWhiteSpace(moniker)) return null;
+
+            foreach (var m in manuals)
+            {
+                if (m.FileRegex != null && m.FileRegex.IsMatch(moniker))
+                {
+                    return m;
+                }
+            }
+            return null;
+        }
+
         public static List<CompiledRule> CompileRules(TabGroupConfig config)
         {
             var rules = new List<CompiledRule>();
-            if (config?.Groups == null)
+            if (config?.ConnectionGroups == null)
             {
                 return rules;
             }
 
-            foreach (var rule in config.Groups)
+            foreach (var rule in config.ConnectionGroups)
             {
                 if (string.IsNullOrWhiteSpace(rule?.GroupName))
                 {

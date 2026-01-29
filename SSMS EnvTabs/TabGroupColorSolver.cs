@@ -4,12 +4,10 @@ namespace SSMS_EnvTabs
 {
     internal static class TabGroupColorSolver
     {
-        /// <summary>
-        /// Solves for a salt that results in the target ColorIndex for the given base regex.
-        /// </summary>
-        /// <param name="baseRegex">The base regex string (e.g. filename regex).</param>
-        /// <param name="targetColorIndex">The desired SSMS color index (0-15).</param>
-        /// <returns>A salt string (e.g. "123") that when appended as (?#salt:123) produces the target color.</returns>
+        // Solves for a salt that results in the target ColorIndex for the given base regex.
+        // <param name="baseRegex">The base regex string (e.g. filename regex).</param>
+        // <param name="targetColorIndex">The desired SSMS color index (0-15).</param>
+        // <returns>A salt string (e.g. "123") that when appended as (?#salt:123) produces the target color.</returns>
         public static string Solve(string baseRegex, int targetColorIndex)
         {
             if (targetColorIndex < 0 || targetColorIndex > 15) return null;
@@ -35,10 +33,18 @@ namespace SSMS_EnvTabs
             return null; // Should essentially never happen
         }
 
-        /// <summary>
-        /// Calculates the hash code using the Legacy .NET 32-bit x86 string hashing algorithm.
-        /// This matches what SSMS versions (based on older .NET Framework execution) use.
-        /// </summary>
+        public static string SolveForColor(string baseRegex, int targetColorIndex)
+        {
+            string salt = Solve(baseRegex, targetColorIndex);
+            if (salt != null)
+            {
+                return baseRegex + "(?#salt:" + salt + ")";
+            }
+            return baseRegex;
+        }
+
+        // Calculates the hash code using the Legacy .NET 32-bit x86 string hashing algorithm.
+        // This matches what SSMS versions (based on older .NET Framework execution) use.
         public static int GetSsmsStableHashCode(string str)
         {
             unchecked

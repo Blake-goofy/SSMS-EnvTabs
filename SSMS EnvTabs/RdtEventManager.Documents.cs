@@ -20,15 +20,89 @@ namespace SSMS_EnvTabs
                 return false;
             }
 
+            if (!RdtEventManager.SuppressVerboseLogs)
+            {
+                EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetConnectionInfo - Starting (DocView only)");
+            }
+
             try
             {
-                TryPopulateFromCaptions(frame, ref server, ref database);
-                return !string.IsNullOrWhiteSpace(server) || !string.IsNullOrWhiteSpace(database);
-            }
-            catch
-            {
+                // 1. DocView/Reflection Method (Main attempt)
+                if (TryPopulateFromDocView(frame, out string docViewServer, out string docViewDatabase))
+                {
+                    server = docViewServer;
+                    database = docViewDatabase;
+                    if (!RdtEventManager.SuppressVerboseLogs)
+                    {
+                        EnvTabsLog.Info($"RdtEventManager.Documents.cs::TryGetConnectionInfo - Main success. Server='{server}', Database='{database}'");
+                    }
+                    return true;
+                }
+                else
+                {
+                    if (!RdtEventManager.SuppressVerboseLogs)
+                    {
+                        EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetConnectionInfo - Main failed or incomplete.");
+                    }
+                }
+
                 return false;
             }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Error($"TryGetConnectionInfo exception: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool TryPopulateFromDocView(IVsWindowFrame frame, out string server, out string database)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            server = null;
+            database = null;
+
+            try
+            {
+                if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView) == VSConstants.S_OK && docView != null)
+                {
+                    // Inspect private field "m_connection" on the DocView (SqlScriptEditorControl)
+                    // This is more reliable than tooltips which users can disable.
+                    var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                    var field = docView.GetType().GetField("m_connection", flags);
+                    if (field != null)
+                    {
+                        var connection = field.GetValue(docView);
+                        if (connection != null)
+                        {
+                            var connType = connection.GetType();
+                            // properties: DataSource (=Server), Database
+                            var propDataSource = connType.GetProperty("DataSource");
+                            var propDatabase = connType.GetProperty("Database");
+                            
+                            string s = propDataSource?.GetValue(connection) as string;
+                            string d = propDatabase?.GetValue(connection) as string;
+
+                            if (!string.IsNullOrWhiteSpace(s))
+                            {
+                                server = s;
+                                database = d;
+                                return true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Debug log to see why field might be missing
+                        EnvTabsLog.Info($"TryPopulateFromDocView: 'm_connection' field not found on type {docView.GetType().FullName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Fail silently, fallback to other methods
+                EnvTabsLog.Error($"Error accessing DocView connection info: {ex.Message}");
+            }
+            return false;
         }
 
         private static void TryPopulateFromCaptions(IVsWindowFrame frame, ref string server, ref string database)
@@ -124,6 +198,12 @@ namespace SSMS_EnvTabs
                 uint cookie = cookies[0];
                 string moniker = TryGetMonikerFromCookie(cookie);
                 if (string.IsNullOrWhiteSpace(moniker))
+                {
+                    continue;
+                }
+
+                // Only consider SQL query documents
+                if (!moniker.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -252,64 +332,88 @@ namespace SSMS_EnvTabs
             return false;
         }
 
-        private bool TryGetCookieFromMoniker(string moniker, out uint cookie)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            cookie = 0;
-            if (string.IsNullOrWhiteSpace(moniker)) return false;
-
-            try
-            {
-                rdt.FindAndLockDocument((uint)_VSRDTFLAGS.RDT_NoLock, moniker, out IVsHierarchy _, out uint _, out IntPtr _, out cookie);
-                return cookie != 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private IVsWindowFrame TryGetFrameFromMoniker(string moniker)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
             if (shellOpenDoc == null || string.IsNullOrWhiteSpace(moniker)) return null;
 
+            if (!RdtEventManager.SuppressVerboseLogs)
+            {
+                EnvTabsLog.Info($"RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main attempt (IsDocumentOpen). Moniker='{moniker}'");
+            }
+
+            // Main attempt: IsDocumentOpen
             try
             {
                 Guid logicalView = Guid.Empty;
-                shellOpenDoc.OpenDocumentViaProject(
-                    moniker,
-                    ref logicalView,
-                    out Microsoft.VisualStudio.OLE.Interop.IServiceProvider _,
-                    out IVsUIHierarchy _,
-                    out uint _,
-                    out IVsWindowFrame frame);
-
-                return frame;
+                uint[] itemid = new uint[1];
+                if (shellOpenDoc.IsDocumentOpen(null, 0, moniker, ref logicalView, 0, out IVsUIHierarchy _, itemid, out IVsWindowFrame frame, out int isOpen) == VSConstants.S_OK && isOpen != 0)
+                {
+                    if (!RdtEventManager.SuppressVerboseLogs)
+                    {
+                        EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main success. Frame found.");
+                    }
+                    return frame;
+                }
+                else
+                {
+                    if (!RdtEventManager.SuppressVerboseLogs)
+                    {
+                        EnvTabsLog.Info("RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main failed (not open or error).");
+                    }
+                }
             }
-            catch
+            catch(Exception ex)
             {
+                if (!RdtEventManager.SuppressVerboseLogs)
+                {
+                    EnvTabsLog.Info($"RdtEventManager.Documents.cs::TryGetFrameFromMoniker - Main exception: {ex.Message}");
+                }
                 return null;
             }
+
+            return null;
         }
 
-        private static bool IsRenameEligible(string caption)
+        private static bool IsRenameEligible(string moniker, string caption)
+        {
+            if (string.IsNullOrWhiteSpace(moniker)) return false;
+
+            // Check if it's a Temp file (New Query)
+            if (IsTempFile(moniker))
+            {
+                // Verify it's a SQL file
+                return moniker.EndsWith(".sql", StringComparison.OrdinalIgnoreCase);
+            }
+
+            // For saved files, we are eligible ONLY if the current caption matches the filename exactly.
+            // This prevents overwriting our own renames or user-customized renames.
+            try
+            {
+                string fileName = System.IO.Path.GetFileName(moniker);
+                if (string.Equals(caption, fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch {}
+
+            return false;
+        }
+
+        public static bool IsTempFile(string path)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(caption))
+                string tempPath = System.IO.Path.GetTempPath();
+                if (path != null && path.StartsWith(tempPath, StringComparison.OrdinalIgnoreCase))
                 {
-                    return false;
+                    return true;
                 }
-
-                return RenameEligibleRegex.IsMatch(caption);
             }
-            catch
-            {
-                return false;
-            }
+            catch {}
+            return false;
         }
     }
 }

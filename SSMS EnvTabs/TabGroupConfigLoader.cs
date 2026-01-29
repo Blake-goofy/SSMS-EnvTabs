@@ -32,7 +32,7 @@ namespace SSMS_EnvTabs
                     string defaultJson = ReadDefaultConfigJsonOrNull();
                     if (string.IsNullOrWhiteSpace(defaultJson))
                     {
-                        defaultJson = "{\n  \"groups\": [],\n  \"settings\": { \"enableAutoRename\": true, \"enableAutoColor\": false }\n}\n";
+                        defaultJson = "{\n  \"connectionGroups\": [],\n  \"settings\": { \"enableAutoRename\": true, \"enableAutoColor\": false }\n}\n";
                     }
 
                     File.WriteAllText(path, defaultJson, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));

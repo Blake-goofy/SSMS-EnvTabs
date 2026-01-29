@@ -13,13 +13,10 @@ namespace SSMS_EnvTabs
 {
     internal sealed partial class RdtEventManager : IVsRunningDocTableEvents3, IVsSelectionEvents, IDisposable
     {
-        private const uint SeidWindowFrame = 1;
-        private const uint SeidDocumentFrame = 2;
+        internal static bool SuppressVerboseLogs;
         private const int RenameRetryCount = 20; // Increased to handle slow connection changes (up to 5s)
         private const int RenameRetryDelayMs = 250;
-        private static readonly Regex RenameEligibleRegex = new Regex(
-            @"^SQLQuery\d+\.sql\b",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        private const int ConnectionPollIntervalMs = 1000;
 
         private readonly AsyncPackage package;
         private readonly IVsRunningDocumentTable rdt;
@@ -31,13 +28,16 @@ namespace SSMS_EnvTabs
         private uint selectionEventsCookie;
 
         private readonly Dictionary<uint, int> renameRetryCounts = new Dictionary<uint, int>();
+        private readonly Dictionary<uint, (string Server, string Database)> lastConnectionByCookie = new Dictionary<uint, (string Server, string Database)>();
         private FileSystemWatcher configWatcher;
         private CancellationTokenSource debounceCts;
         private readonly object debounceLock = new object();
+        private Timer connectionPollTimer;
 
         private TabGroupConfig cachedConfig;
         private DateTime cachedConfigLastWriteUtc;
         private List<TabRuleMatcher.CompiledRule> cachedRules;
+        private List<TabRuleMatcher.CompiledManualRule> cachedManualRules;
 
         private DateTime suppressColorUpdatesUntilUtc;
 
@@ -84,30 +84,36 @@ namespace SSMS_EnvTabs
         private void Start()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-
+            
             AutoConfigurationService.DialogClosed += OnAutoConfigDialogClosed;
 
             try
             {
                 rdt.AdviseRunningDocTableEvents(this, out rdtEventsCookie);
+                EnvTabsLog.Info($"RdtEventManager: Successfully subscribed to RDT events. Cookie={rdtEventsCookie}");
             }
             catch (Exception ex)
             {
                 EnvTabsLog.Info($"RdtEventManager: failed to subscribe RDT events: {ex.Message}");
             }
 
-            if (monitorSelection != null)
+            try
             {
-                try
+                if (monitorSelection != null)
                 {
                     monitorSelection.AdviseSelectionEvents(this, out selectionEventsCookie);
-                }
-                catch (Exception ex)
-                {
-                    EnvTabsLog.Info($"RdtEventManager: failed to subscribe selection events: {ex.Message}");
+                    EnvTabsLog.Info($"RdtEventManager: Successfully subscribed to Selection events. Cookie={selectionEventsCookie}");
                 }
             }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"RdtEventManager: failed to subscribe Selection events: {ex.Message}");
+            }
 
+            // Poll for connection changes on active/open documents (SSMS often does not raise RDT events on connection switches)
+            connectionPollTimer = new Timer(ConnectionPollTick, null, ConnectionPollIntervalMs, ConnectionPollIntervalMs);
+            EnvTabsLog.Info("RdtEventManager.cs::Start - Connection polling enabled.");
+            
             try
             {
                 string configPath = TabGroupConfigLoader.GetUserConfigPath();
@@ -136,26 +142,13 @@ namespace SSMS_EnvTabs
 
             try
             {
+                connectionPollTimer?.Dispose();
+                connectionPollTimer = null;
                 configWatcher?.Dispose();
                 debounceCts?.Cancel();
                 debounceCts?.Dispose();
             }
             catch { }
-
-
-
-            try
-            {
-                if (selectionEventsCookie != 0 && monitorSelection != null)
-                {
-                    monitorSelection.UnadviseSelectionEvents(selectionEventsCookie);
-                    selectionEventsCookie = 0;
-                }
-            }
-            catch
-            {
-                // best-effort
-            }
 
             try
             {
@@ -174,22 +167,38 @@ namespace SSMS_EnvTabs
         private bool HandlePotentialChange(uint docCookie, IVsWindowFrame frame, string reason)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            EnvTabsLog.Info($"HandlePotentialChange starting. Reason={reason}, Cookie={docCookie}");
             
             var config = LoadConfigOrNull();
             if (config == null)
             {
+                EnvTabsLog.Info("HandlePotentialChange: Config is null, returning true.");
                 return true;
             }
 
-            var rules = cachedRules ?? new List<TabRuleMatcher.CompiledRule>();
-            // If rules.Count == 0, we still proceed because we might need to AutoConfigure/ProposeNewRule
+            var rules = cachedRules ?? TabRuleMatcher.CompileRules(config);
+            var manualRules = cachedManualRules ?? TabRuleMatcher.CompileManualRules(config);
 
             bool needsRetry = false;
             int renamedCount = 0;
 
-            if (config.Settings?.EnableAutoRename != false && frame != null)
+            string frameMoniker = null;
+            if (frame != null)
+            {
+                TryGetMonikerFromFrame(frame, out frameMoniker);
+                if (!string.IsNullOrWhiteSpace(frameMoniker) && !frameMoniker.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+                {
+                    EnvTabsLog.Info($"HandlePotentialChange: Non-SQL moniker ignored. Moniker='{frameMoniker}'");
+                    return true;
+                }
+            }
+
+            if (frame != null && config.Settings?.EnableAutoRename != false)
             {
                 string caption = TryReadFrameCaption(frame);
+                string moniker = frameMoniker;
+
+                EnvTabsLog.Info($"HandlePotentialChange: Frame Caption='{caption}', Moniker='{moniker}'");
                 
                 // If the reason is AttributeChange (connection change), we should attempt rename even if it doesn't look eligible anymore (e.g. if it was already renamed)
                 // because the user is changing the connection to something new.
@@ -199,17 +208,32 @@ namespace SSMS_EnvTabs
                     reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0
                 );
 
-                if (forceCheck || IsRenameEligible(caption))
+                if (forceCheck || IsRenameEligible(moniker, caption))
                 {
+                    EnvTabsLog.Info($"HandlePotentialChange: Eligible for rename check (force={forceCheck}). Requesting connection info...");
+
                     if (TryGetConnectionInfo(frame, out string server, out string database))
                     {
+                        EnvTabsLog.Info($"HandlePotentialChange: Connection Info Found. Server='{server}', DB='{database}'");
                         try
                         {
-                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { (docCookie, frame, server, database, caption) }, rules);
+                            var ctx = new TabRenameContext
+                            {
+                                Cookie = docCookie,
+                                Frame = frame,
+                                Server = server,
+                                Database = database,
+                                FrameCaption = caption,
+                                Moniker = moniker
+                            };
+                            string style = config.Settings?.NewQueryRenameStyle;
+                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { ctx }, rules, manualRules, style);
                             
                             // Check for match explicitly to avoid duplicate rules if rename fails
                             string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
-                            bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup);
+                            var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
+                            bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+                            EnvTabsLog.Info($"HandlePotentialChange: ApplyRenamesOrThrow ran. RenamedCount={renamedCount}, HasMatchingRule={hasMatchingRule}");
 
                             // Auto-Configure logic if no rule matched
                             if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
@@ -221,6 +245,7 @@ namespace SSMS_EnvTabs
                                 // Only prompt if this is a "valid" connection (has text).
                                 if (!string.IsNullOrWhiteSpace(server))
                                 {
+                                    EnvTabsLog.Info($"HandlePotentialChange: No matching rule found. Triggering AutoConfigurationService.");
                                     // Dispatch to UI thread later to avoid blocking RDT event
                                     _ = package.JoinableTaskFactory.RunAsync(async () =>
                                     {
@@ -238,28 +263,92 @@ namespace SSMS_EnvTabs
                     else
                     {
                         // Needs retry if connection info not found yet
+                        EnvTabsLog.Info($"HandlePotentialChange: Connection info NOT found yet. Setting needsRetry=true.");
                         needsRetry = true;
+                    }
+                }
+                else
+                {
+                    // If not eligible for rename (e.g. already renamed, or not a temp file),
+                    // still attempt connection lookup and auto-config if no match exists.
+                    if (TryGetConnectionInfo(frame, out string server, out string database))
+                    {
+                        EnvTabsLog.Info($"HandlePotentialChange: Not eligible for rename, but found connection info. Server='{server}', DB='{database}'");
+
+                        string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
+                        var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
+                        bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+
+                        if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure) && !string.IsNullOrWhiteSpace(server))
+                        {
+                            EnvTabsLog.Info("HandlePotentialChange: No matching rule found (non-rename path). Triggering AutoConfigurationService.");
+                            _ = package.JoinableTaskFactory.RunAsync(async () =>
+                            {
+                                await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                AutoConfigurationService.ProposeNewRule(config, server, database);
+                            });
+                        }
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info($"HandlePotentialChange: Not eligible for rename. Caption='{caption}'");
+                    }
+                }
+            }
+            else
+            {
+                if (frame == null)
+                {
+                    EnvTabsLog.Info("HandlePotentialChange: Frame is null.");
+                }
+                else if (config.Settings?.EnableAutoRename == false)
+                {
+                    // Auto-rename disabled: still attempt connection info and auto-config.
+                    string caption = TryReadFrameCaption(frame);
+                    TryGetMonikerFromFrame(frame, out string moniker);
+                    if (TryGetConnectionInfo(frame, out string server, out string database))
+                    {
+                        EnvTabsLog.Info($"HandlePotentialChange: AutoRename disabled, connection found. Server='{server}', DB='{database}'");
+
+                        string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
+                        var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
+                        bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+
+                        if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure) && !string.IsNullOrWhiteSpace(server))
+                        {
+                            EnvTabsLog.Info("HandlePotentialChange: No matching rule found (auto-rename disabled). Triggering AutoConfigurationService.");
+                            _ = package.JoinableTaskFactory.RunAsync(async () =>
+                            {
+                                await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                AutoConfigurationService.ProposeNewRule(config, server, database);
+                            });
+                        }
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info($"HandlePotentialChange: AutoRename disabled, no connection info yet. Caption='{caption}'");
                     }
                 }
             }
 
             bool isConnectionEvent = reason != null && (
                 reason.IndexOf("DocumentWindowShow", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("FirstDocumentLock", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("AttributeChangeEx", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("ActiveFrameChanged", StringComparison.OrdinalIgnoreCase) >= 0
             );
 
             bool shouldUpdateColor = !needsRetry && (renamedCount > 0 || isConnectionEvent);
-
-            if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
+                        
+            if (config.Settings?.EnableAutoColor == true)
             {
                 try
                 {
                     if (!IsColorUpdateSuppressed())
                     {
                         var docs = GetOpenDocumentsSnapshot();
-                        colorWriter.UpdateFromSnapshot(docs, rules);
+                        colorWriter.UpdateFromSnapshot(docs, rules, manualRules);
                     }
                     else
                     {
@@ -270,6 +359,10 @@ namespace SSMS_EnvTabs
                 {
                     EnvTabsLog.Info($"ColorByRegex update failed ({reason}): {ex.Message}");
                 }
+            }
+            else
+            {
+                EnvTabsLog.Info($"RdtEventManager.cs::HandlePotentialChange - AutoColor disabled; skipping ColorByRegex update. Reason={reason}");
             }
 
             return !needsRetry;
@@ -333,6 +426,143 @@ namespace SSMS_EnvTabs
 
                 renameRetryCounts.Remove(docCookie);
             });
+        }
+
+        private void ConnectionPollTick(object state)
+        {
+            _ = package.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    PollConnectionChanges();
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"RdtEventManager.cs::ConnectionPollTick - Error: {ex.Message}");
+                }
+            });
+        }
+
+        private void PollConnectionChanges()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            var config = LoadConfigOrNull();
+            if (config == null)
+            {
+                return;
+            }
+
+            if (config.Settings?.EnableConnectionPolling != true)
+            {
+                return;
+            }
+
+            SuppressVerboseLogs = true;
+            try
+            {
+
+            var docs = GetOpenDocumentsSnapshot();
+            var seen = new HashSet<uint>();
+
+            foreach (var doc in docs)
+            {
+                if (doc == null || doc.Frame == null)
+                {
+                    continue;
+                }
+
+                seen.Add(doc.Cookie);
+
+                string newServer = doc.Server ?? string.Empty;
+                string newDatabase = doc.Database ?? string.Empty;
+
+                if (lastConnectionByCookie.TryGetValue(doc.Cookie, out var previous))
+                {
+                    bool serverChanged = !string.Equals(previous.Server ?? string.Empty, newServer, StringComparison.OrdinalIgnoreCase);
+                    bool databaseChanged = !string.Equals(previous.Database ?? string.Empty, newDatabase, StringComparison.OrdinalIgnoreCase);
+
+                    if (serverChanged || databaseChanged)
+                    {
+                        EnvTabsLog.Info($"RdtEventManager.cs::PollConnectionChanges - Detected connection change. Cookie={doc.Cookie}, '{previous.Server}.{previous.Database}' -> '{newServer}.{newDatabase}'");
+                        lastConnectionByCookie[doc.Cookie] = (newServer, newDatabase);
+                        HandlePotentialChange(doc.Cookie, doc.Frame, "ConnectionPoll");
+                    }
+                }
+                else
+                {
+                    // First observation for this cookie (no log; only log on change)
+                    lastConnectionByCookie[doc.Cookie] = (newServer, newDatabase);
+                }
+            }
+
+            // Clean up stale entries
+            var staleCookies = lastConnectionByCookie.Keys.Where(c => !seen.Contains(c)).ToList();
+            foreach (var cookie in staleCookies)
+            {
+                lastConnectionByCookie.Remove(cookie);
+            }
+            }
+            finally
+            {
+                SuppressVerboseLogs = false;
+            }
+        }
+
+        // --- IVsSelectionEvents ---
+        public int OnSelectionChanged(IVsHierarchy pHierOld, uint itemidOld, IVsMultiItemSelect pMISOld, ISelectionContainer pSCOld, IVsHierarchy pHierNew, uint itemidNew, IVsMultiItemSelect pMISNew, ISelectionContainer pSCNew)
+        {
+            EnvTabsLog.Info("RdtEventManager.cs::OnSelectionChanged - Event fired.");
+            return VSConstants.S_OK;
+        }
+
+        public int OnElementValueChanged(uint elementid, object varValueOld, object varValueNew)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            EnvTabsLog.Info($"RdtEventManager.cs::OnElementValueChanged - elementid={elementid}");
+            // SEID_WindowFrame = 2
+            if (elementid == (uint)VSConstants.VSSELELEMID.SEID_WindowFrame)
+            {
+                // When active window changes, we check if we need to update info.
+                // This might catch cases where connection changed via a dialog and we return to the window.
+                var frame = varValueNew as IVsWindowFrame;
+                if (frame != null)
+                {
+                    _ = package.JoinableTaskFactory.RunAsync(async () =>
+                    {
+                        // Slight delay to allow SSMS to update its internal state
+                        await Task.Delay(500);
+                        await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        CheckActiveFrame(frame);
+                    });
+                }
+            }
+            return VSConstants.S_OK;
+        }
+
+        public int OnCmdUIContextChanged(uint dwCmdUICookie, int fActive)
+        {
+            return VSConstants.S_OK;
+        }
+
+        private void CheckActiveFrame(IVsWindowFrame frame)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try 
+            {
+                var docs = GetOpenDocumentsSnapshot();
+                var match = docs.FirstOrDefault(d => d.Frame == frame);
+                if (match != null)
+                {
+                    // Force check even if we think nothing changed
+                    HandlePotentialChange(match.Cookie, frame, "ElementValueChanged");
+                }
+            }
+            catch(Exception ex)
+            {
+                EnvTabsLog.Info($"CheckActiveFrame Error: {ex.Message}");
+            }
         }
 
     }

@@ -22,6 +22,16 @@ namespace SSMS_EnvTabs
             public bool ChangesApplied { get; set; }
         }
 
+        private struct AddRuleContext
+        {
+            public TabGroupConfig Config { get; set; }
+            public string Server { get; set; }
+            public string Database { get; set; }
+            public bool UseDb { get; set; }
+            public string GroupName { get; set; }
+            public int ColorIndex { get; set; }
+        }
+
         public static void ClearSuppressed()
         {
             suppressedConnections.Clear();
@@ -42,9 +52,6 @@ namespace SSMS_EnvTabs
 
             string connectionKey = useDb ? $"{server}::{database}" : server;
             
-            // Check if already configured (in strict memory) to avoid duplicate prompt if re-triggered quickly
-            // Though RdtEventManager should handle this via "hasMatchingRule" check.
-
             if (suppressedConnections.Contains(connectionKey)) 
             {
                 EnvTabsLog.Info($"AutoConfig: Suppressed key {connectionKey}");
@@ -53,12 +60,48 @@ namespace SSMS_EnvTabs
 
             // Prepare suggested values
             int nextColor = FindNextColorValues(config);
-            string suggestedName = useDb && !string.IsNullOrWhiteSpace(database) ? $"{server}.{database}" : server;
+            string suggestedName;
+            
+            // Check for Server Alias
+            if (config.ServerAliases == null)
+            {
+                config.ServerAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+            
+            string existingAlias = null;
+            if (config.ServerAliases.TryGetValue(server, out string alias))
+            {
+                existingAlias = alias;
+            }
+
+            if (useDb && !string.IsNullOrWhiteSpace(database))
+            {
+                 // If alias exists, use it. e.g. "SCALE20 ILS"
+                 string prefix = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+                 suggestedName = $"{prefix} {database}";
+            }
+            else
+            {
+                 suggestedName = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+            }
+            
+            // Clean up name slightly (remove double spaces if any)
+            suggestedName = System.Text.RegularExpressions.Regex.Replace(suggestedName, @"\s+", " ").Trim();
 
             EnvTabsLog.Info($"AutoConfig: Proposing new rule for {connectionKey}. Color={nextColor}, Name={suggestedName}, Prompt={config.Settings.EnableConfigurePrompt}");
             
-            // Step 1: ALWAYS Create and Save the rule immediately (Requirement: "rule should be written... right away")
-            var newRule = AddRuleAndSave(config, server, database, useDb, suggestedName, nextColor);
+            // Step 1: ALWAYS Create and Save the rule immediately
+            var context = new AddRuleContext
+            {
+                Config = config,
+                Server = server,
+                Database = database,
+                UseDb = useDb,
+                GroupName = suggestedName,
+                ColorIndex = nextColor
+            };
+
+            var newRule = AddRuleAndSave(context);
             
             // Mark as suppressed immediately so we don't re-enter if RDT events fire again while dialog is open or after
             suppressedConnections.Add(connectionKey);
@@ -72,7 +115,17 @@ namespace SSMS_EnvTabs
                     // Step 2: Prompt to edit the JUST CREATED rule
                     // We use newRule.ColorIndex because AddRuleAndSave might have adjusted it if we add more logic, 
                     // but currently it just uses what we passed.
-                    using (var dlg = new NewRuleDialog(server, database, suggestedName, nextColor))
+                    
+                    var dialogOptions = new NewRuleDialog.NewRuleDialogOptions
+                    {
+                        Server = server,
+                        Database = database,
+                        SuggestedName = suggestedName,
+                        SuggestedColorIndex = nextColor,
+                        ExistingAlias = existingAlias
+                    };
+
+                    using (var dlg = new NewRuleDialog(dialogOptions))
                     {
                         // To avoid "Color goes away" on Cancel:
                         // We must ensure that we DO NOT trigger a save/write if canceled.
@@ -86,11 +139,26 @@ namespace SSMS_EnvTabs
                             string updatedName = string.IsNullOrWhiteSpace(dlg.RuleName) ? newRule.GroupName : dlg.RuleName;
                             int updatedColor = dlg.SelectedColorIndex;
 
-                            // User wants to change it
+                            bool configChanged = false;
+
+                            // Update Alias if new
+                            if (!string.IsNullOrWhiteSpace(dlg.ServerAlias) && 
+                                (!string.Equals(dlg.ServerAlias, existingAlias, StringComparison.Ordinal)))
+                            {
+                                config.ServerAliases[server] = dlg.ServerAlias;
+                                configChanged = true;
+                            }
+
+                            // User wants to change rule
                             if (updatedName != newRule.GroupName || updatedColor != newRule.ColorIndex)
                             {
                                 newRule.GroupName = updatedName;
                                 newRule.ColorIndex = updatedColor;
+                                configChanged = true;
+                            }
+                            
+                            if (configChanged)
+                            {
                                 SaveConfig(config);
                                 changesApplied = true;
                             }
@@ -117,19 +185,26 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static TabGroupRule AddRuleAndSave(TabGroupConfig config, string server, string database, bool useDb, string groupName, int colorIndex)
+        private static TabGroupRule AddRuleAndSave(AddRuleContext ctx)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            var config = ctx.Config;
 
             // Check if we should remove the default example rule
-            var exampleRule = config.Groups.FirstOrDefault(g => g.GroupName == "Example: Exact Match");
+            var exampleRule = config.ConnectionGroups.FirstOrDefault(g => g.GroupName == "Example: Exact Match");
             if (exampleRule != null)
             {
-                config.Groups.Remove(exampleRule);
+                config.ConnectionGroups.Remove(exampleRule);
+            }
+
+            // Check if we should remove the default example alias
+            if (config.ServerAliases != null && config.ServerAliases.ContainsKey("MY-APP-SERVER"))
+            {
+                config.ServerAliases.Remove("MY-APP-SERVER");
             }
             
             // Renumber priorities: existing rules move to 20, 30, 40...
-            var sorted = config.Groups.OrderBy(x => x.Priority).ToList();
+            var sorted = config.ConnectionGroups.OrderBy(x => x.Priority).ToList();
             int currentBase = 20;
             foreach (var rule in sorted)
             {
@@ -140,14 +215,14 @@ namespace SSMS_EnvTabs
             // Create new rule at 10
             var newRule = new TabGroupRule
             {
-                GroupName = groupName,
-                Server = server,
-                Database = useDb ? (database ?? "%") : "%",
+                GroupName = ctx.GroupName,
+                Server = ctx.Server,
+                Database = ctx.UseDb ? (ctx.Database ?? "%") : "%",
                 Priority = 10,
-                ColorIndex = colorIndex
+                ColorIndex = ctx.ColorIndex
             };
 
-            config.Groups.Add(newRule);
+            config.ConnectionGroups.Add(newRule);
             
             // Save
             SaveConfig(config);
@@ -166,7 +241,7 @@ namespace SSMS_EnvTabs
             // Requirement 1: "First available" - find a color not currently used.
             // Requirement 2: Strict "Fill the gap" logic without jumping.
             
-            var used = new HashSet<int>(config.Groups.Select(x => x.ColorIndex));
+            var used = new HashSet<int>(config.ConnectionGroups.Select(x => x.ColorIndex));
             
             // Find first hole in 0-15
             for (int i = 0; i <= 15; i++)

@@ -9,7 +9,7 @@ namespace SSMS_EnvTabs
     {
         private static readonly string LogPath = ResolveLogPath();
         private static readonly object LogLock = new object();
-        public static bool Enabled { get; set; } = true;
+        public static bool Enabled { get; set; } = false;
 
         private static string ResolveLogPath()
         {
@@ -34,7 +34,10 @@ namespace SSMS_EnvTabs
             if (!Enabled) return;
             try
             {
-                ActivityLog.LogInformation("SSMS EnvTabs", message ?? string.Empty);
+                if (ThreadHelper.CheckAccess())
+                {
+                    ActivityLog.LogInformation("SSMS EnvTabs", message ?? string.Empty);
+                }
             }
             catch
             {
@@ -49,7 +52,10 @@ namespace SSMS_EnvTabs
             if (!Enabled) return;
             try
             {
-                ActivityLog.LogError("SSMS EnvTabs", message ?? string.Empty);
+                if (ThreadHelper.CheckAccess())
+                {
+                    ActivityLog.LogError("SSMS EnvTabs", message ?? string.Empty);
+                }
             }
             catch
             {

@@ -9,20 +9,54 @@ namespace SSMS_EnvTabs
         // --- RDT events ---
         public int OnAfterFirstDocumentLock(uint docCookie, uint dwRDTLockType, uint dwReadLocksRemaining, uint dwEditLocksRemaining)
         {
+            EnvTabsLog.Info($"RdtEventManager.Events.cs::OnAfterFirstDocumentLock - Cookie={docCookie}");
+            ThreadHelper.ThrowIfNotOnUIThread(); // Ensure UI thread
+
+            // Try to hook into this event since OnAfterDocumentWindowShow is unreliable in SSMS
+            string moniker = TryGetMonikerFromCookie(docCookie);
+            EnvTabsLog.Info($"RdtEventManager.Events.cs::OnAfterFirstDocumentLock - Moniker='{moniker}'");
+
+            if (!string.IsNullOrWhiteSpace(moniker))
+            {
+                IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
+                if (frame != null)
+                {
+                    EnvTabsLog.Info($"OnAfterFirstDocumentLock: Frame found for cookie {docCookie}. Triggering HandlePotentialChange.");
+                    bool done = HandlePotentialChange(docCookie, frame, reason: "FirstDocumentLock");
+                    if (!done)
+                    {
+                        EnvTabsLog.Info($"OnAfterFirstDocumentLock: Connection info missing. Scheduling retry for cookie {docCookie}.");
+                        ScheduleRenameRetry(docCookie, "FirstDocumentLock");
+                    }
+                }
+                else
+                {
+                    EnvTabsLog.Info($"OnAfterFirstDocumentLock: Frame NOT found for cookie {docCookie} via moniker.");
+                }
+            }
+
             return VSConstants.S_OK;
         }
 
         public int OnAfterDocumentWindowShow(uint docCookie, int fFirstShow, IVsWindowFrame pFrame)
         {
+            EnvTabsLog.Info($"OnAfterDocumentWindowShow: Cookie={docCookie}, FirstShow={fFirstShow}");
             ThreadHelper.ThrowIfNotOnUIThread();
-
+            
             if (pFrame != null)
             {
+                string caption = TryReadFrameCaption(pFrame);
+                EnvTabsLog.Info($"OnAfterDocumentWindowShow: Frame Caption='{caption}'");
+
                 bool done = HandlePotentialChange(docCookie, pFrame, reason: "DocumentWindowShow");
                 if (!done)
                 {
                     ScheduleRenameRetry(docCookie, "DocumentWindowShow");
                 }
+            }
+            else 
+            {
+                EnvTabsLog.Info($"OnAfterDocumentWindowShow: Frame is NULL");
             }
 
             return VSConstants.S_OK;
@@ -30,12 +64,25 @@ namespace SSMS_EnvTabs
 
         public int OnAfterAttributeChangeEx(uint docCookie, uint grfAttribs, IVsHierarchy pHierOld, uint itemidOld, string pszMkDocumentOld, IVsHierarchy pHierNew, uint itemidNew, string pszMkDocumentNew)
         {
+            EnvTabsLog.Info($"RdtEventManager.Events.cs::OnAfterAttributeChangeEx - Entered. Cookie={docCookie}, Attribs={grfAttribs}, PsOld='{pszMkDocumentOld}', PsNew='{pszMkDocumentNew}'");
             ThreadHelper.ThrowIfNotOnUIThread();
-
+            
             string moniker = pszMkDocumentNew;
             if (string.IsNullOrWhiteSpace(moniker))
             {
                 moniker = pszMkDocumentOld;
+            }
+            
+            if (string.IsNullOrWhiteSpace(moniker))
+            {
+                // Fallback: If moniker args are empty (common for attribute-only changes like Dirty/Reload),
+                // fetch it from the RDT using the cookie.
+                moniker = TryGetMonikerFromCookie(docCookie);
+                EnvTabsLog.Info($"OnAfterAttributeChangeEx: Moniker fetched from cookie='{moniker}'");
+            }
+            else 
+            {
+                EnvTabsLog.Info($"OnAfterAttributeChangeEx: Moniker from args='{moniker}'");
             }
 
             if (!string.IsNullOrWhiteSpace(moniker))
@@ -43,7 +90,18 @@ namespace SSMS_EnvTabs
                 IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
                 if (frame != null)
                 {
-                    HandlePotentialChange(docCookie, frame, reason: "AttributeChangeEx");
+                    EnvTabsLog.Info($"OnAfterAttributeChangeEx: Frame found. Triggering HandlePotentialChange.");
+                    bool done = HandlePotentialChange(docCookie, frame, reason: "AttributeChangeEx");
+
+                    // Force a retry if it's an AttributeChange, often the DocView is not yet updated with new connection info
+                    if (!done)
+                    {
+                        ScheduleRenameRetry(docCookie, "AttributeChangeEx");
+                    }
+                }
+                else
+                {
+                    EnvTabsLog.Info($"OnAfterAttributeChangeEx: Frame NOT found for moniker.");
                 }
             }
 
@@ -52,12 +110,14 @@ namespace SSMS_EnvTabs
 
         public int OnBeforeLastDocumentUnlock(uint docCookie, uint dwRDTLockType, uint dwReadLocksRemaining, uint dwEditLocksRemaining)
         {
+            EnvTabsLog.Info($"OnBeforeLastDocumentUnlock: Cookie={docCookie}");
             ThreadHelper.ThrowIfNotOnUIThread();
 
             if (dwReadLocksRemaining == 0 && dwEditLocksRemaining == 0)
             {
                 TabRenamer.ForgetCookie(docCookie);
                 renameRetryCounts.Remove(docCookie);
+                lastConnectionByCookie.Remove(docCookie);
 
                 UpdateColorOnly("LastDocumentUnlock");
             }
@@ -65,10 +125,15 @@ namespace SSMS_EnvTabs
             return VSConstants.S_OK;
         }
 
-        public int OnAfterDocumentWindowHide(uint docCookie, IVsWindowFrame pFrame) => VSConstants.S_OK;
+        public int OnAfterDocumentWindowHide(uint docCookie, IVsWindowFrame pFrame)
+        {
+            EnvTabsLog.Info($"OnAfterDocumentWindowHide: Cookie={docCookie}");
+            return VSConstants.S_OK;
+        }
 
         public int OnAfterSave(uint docCookie)
         {
+            EnvTabsLog.Info($"OnAfterSave: Cookie={docCookie}");
             ThreadHelper.ThrowIfNotOnUIThread();
             UpdateColorOnly("AfterSave");
             return VSConstants.S_OK;
@@ -78,6 +143,7 @@ namespace SSMS_EnvTabs
 
         public int OnAfterAttributeChange(uint docCookie, uint grfAttribs)
         {
+            EnvTabsLog.Info($"RdtEventManager.Events.cs::OnAfterAttributeChange - Entered. Cookie={docCookie}, Attribs={grfAttribs}");
             ThreadHelper.ThrowIfNotOnUIThread();
 
             string moniker = TryGetMonikerFromCookie(docCookie);
@@ -104,43 +170,5 @@ namespace SSMS_EnvTabs
         }
 
         public int OnBeforeDocumentWindowShow(uint docCookie, int fFirstShow, IVsWindowFrame pFrame) => VSConstants.S_OK;
-
-        // --- Selection events ---
-
-        public int OnElementValueChanged(uint elementid, object varValueOld, object varValueNew)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            if (elementid == SeidDocumentFrame || elementid == SeidWindowFrame)
-            {
-                if (varValueNew is IVsWindowFrame frame)
-                {
-                    uint cookie = 0;
-                    string moniker = null;
-                    if (TryGetMonikerFromFrame(frame, out moniker))
-                    {
-                        TryGetCookieFromMoniker(moniker, out cookie);
-                    }
-
-                    if (cookie == 0)
-                    {
-                        // Found frame but no cookie
-                    }
-
-                    bool done = HandlePotentialChange(cookie, frame, reason: "ActiveFrameChanged");
-                    if (!done && cookie != 0)
-                    {
-                        ScheduleRenameRetry(cookie, "ActiveFrameChanged");
-                    }
-                }
-            }
-
-            return VSConstants.S_OK;
-        }
-
-        public int OnCmdUIContextChanged(uint dwCmdUICookie, int fActive) => VSConstants.S_OK;
-
-        public int OnSelectionChanged(IVsHierarchy pHierOld, uint itemidOld, IVsMultiItemSelect pMISOld, ISelectionContainer pSCOld,
-            IVsHierarchy pHierNew, uint itemidNew, IVsMultiItemSelect pMISNew, ISelectionContainer pSCNew) => VSConstants.S_OK;
     }
 }

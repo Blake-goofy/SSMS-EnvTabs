@@ -70,7 +70,7 @@ namespace SSMS_EnvTabs
         {
             try
             {
-                EnvTabsLog.Info($"Config file system event: {e.ChangeType} - {e.FullPath}");
+                // EnvTabsLog.Info($"Config file system event: {e.ChangeType} - {e.FullPath}"); 
 
                 // Debounce logic
                 CancellationToken token;
@@ -85,6 +85,10 @@ namespace SSMS_EnvTabs
                 {
                     try
                     {
+                        // Log inside async task to allow switching to UI thread if needed (though we just write to file off-thread primarily)
+                        // EnvTabsLog.Info handles CheckAccess internally now.
+                        EnvTabsLog.Info($"Config file system event: {e.ChangeType} - {e.FullPath}");
+
                         await Task.Delay(500, token);
                         await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                         ReloadAndApplyConfig();
@@ -118,6 +122,7 @@ namespace SSMS_EnvTabs
 
             var config = LoadConfigOrNull();
             var rules = cachedRules; // LoadConfigOrNull updates cachedRules
+            var manualRules = cachedManualRules;
 
             if (config == null) return;
 
@@ -128,13 +133,21 @@ namespace SSMS_EnvTabs
             try
             {
                 var renameCandidates = docs
-                    .Where(doc => !string.IsNullOrWhiteSpace(doc?.Server))
-                    .Select(doc => (doc.Cookie, doc.Frame, doc.Server, doc.Database, doc.Caption))
+                    .Where(doc => !string.IsNullOrWhiteSpace(doc?.Moniker)) // Filter empty?
+                    .Select(doc => new TabRenameContext
+                    {
+                        Cookie = doc.Cookie,
+                        Frame = doc.Frame,
+                        Server = doc.Server,
+                        Database = doc.Database,
+                        FrameCaption = doc.Caption,
+                        Moniker = doc.Moniker
+                    })
                     .ToList();
 
                 if (renameCandidates.Count > 0)
                 {
-                    renamedCount = TabRenamer.ApplyRenamesOrThrow(renameCandidates, rules);
+                    renamedCount = TabRenamer.ApplyRenamesOrThrow(renameCandidates, rules, manualRules, config.Settings?.NewQueryRenameStyle);
                 }
             }
             catch (Exception ex)
@@ -149,7 +162,7 @@ namespace SSMS_EnvTabs
                 {
                     if (!IsColorUpdateSuppressed())
                     {
-                        colorWriter.UpdateFromSnapshot(docs, rules);
+                        colorWriter.UpdateFromSnapshot(docs, rules, manualRules);
                     }
                     else
                     {
@@ -174,6 +187,7 @@ namespace SSMS_EnvTabs
                 {
                     cachedConfig = null;
                     cachedRules = null;
+                    cachedManualRules = null;
                     cachedConfigLastWriteUtc = default;
                     return null;
                 }
@@ -181,6 +195,12 @@ namespace SSMS_EnvTabs
                 DateTime lastWriteUtc = File.GetLastWriteTimeUtc(path);
                 if (cachedConfig != null && lastWriteUtc == cachedConfigLastWriteUtc)
                 {
+                    if ((cachedRules == null || cachedManualRules == null) && cachedConfig != null)
+                    {
+                        cachedRules = TabRuleMatcher.CompileRules(cachedConfig);
+                        cachedManualRules = TabRuleMatcher.CompileManualRules(cachedConfig);
+                        EnvTabsLog.Info($"RdtEventManager.Config.cs::LoadConfigOrNull - Rebuilt cached rules. Rules={cachedRules?.Count ?? 0}, ManualRules={cachedManualRules?.Count ?? 0}");
+                    }
                     return cachedConfig;
                 }
 
@@ -194,6 +214,8 @@ namespace SSMS_EnvTabs
                 cachedConfig = loaded;
                 cachedConfigLastWriteUtc = lastWriteUtc;
                 cachedRules = TabRuleMatcher.CompileRules(loaded);
+                cachedManualRules = TabRuleMatcher.CompileManualRules(loaded);
+                EnvTabsLog.Info($"RdtEventManager.Config.cs::LoadConfigOrNull - Loaded. Rules={cachedRules?.Count ?? 0}, ManualRules={cachedManualRules?.Count ?? 0}, AutoColor={loaded?.Settings?.EnableAutoColor}, AutoRename={loaded?.Settings?.EnableAutoRename}, Polling={loaded?.Settings?.EnableConnectionPolling}");
                 return loaded;
             }
             catch (Exception ex)
@@ -222,8 +244,10 @@ namespace SSMS_EnvTabs
                 return;
             }
 
-            var rules = cachedRules ?? new System.Collections.Generic.List<TabRuleMatcher.CompiledRule>();
-            if (rules.Count == 0)
+            var rules = cachedRules ?? TabRuleMatcher.CompileRules(config);
+            var manualRules = cachedManualRules ?? TabRuleMatcher.CompileManualRules(config);
+
+            if (rules.Count == 0 && manualRules.Count == 0)
             {
                 return;
             }
@@ -231,7 +255,7 @@ namespace SSMS_EnvTabs
             try
             {
                 var docs = GetOpenDocumentsSnapshot();
-                colorWriter.UpdateFromSnapshot(docs, rules);
+                colorWriter.UpdateFromSnapshot(docs, rules, manualRules);
             }
             catch (Exception ex)
             {

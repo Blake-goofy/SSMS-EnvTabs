@@ -9,36 +9,65 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "description", IsRequired = false, Order = 0)]
         public string Description { get; set; }
 
-        [DataMember(Name = "version", IsRequired = false, Order = 1)]
-        public string Version { get; set; }
-
-        [DataMember(Name = "settings", IsRequired = false, Order = 2)]
-        public TabGroupSettings Settings { get; set; } = new TabGroupSettings();
-
-        [DataMember(Name = "help", IsRequired = false, Order = 3)]
+        [DataMember(Name = "help", IsRequired = false, Order = 1)]
         public string Help { get; set; }
 
-        [DataMember(Name = "groups", IsRequired = false, Order = 4)]
-        public List<TabGroupRule> Groups { get; set; } = new List<TabGroupRule>();
+        [DataMember(Name = "version", IsRequired = false, Order = 2)]
+        public string Version { get; set; }
+
+        [DataMember(Name = "settings", IsRequired = false, Order = 3)]
+        public TabGroupSettings Settings { get; set; } = new TabGroupSettings();
+
+        [DataMember(Name = "manualRegexLines", IsRequired = false, Order = 4)]
+        public List<ManualRegexEntry> ManualRegexLines { get; set; } = new List<ManualRegexEntry>();
+
+        [DataMember(Name = "serverAlias", IsRequired = false, Order = 5)]
+        public Dictionary<string, string> ServerAliases { get; set; } = new Dictionary<string, string>();
+
+        [DataMember(Name = "connectionGroups", IsRequired = false, Order = 6)]
+        public List<TabGroupRule> ConnectionGroups { get; set; } = new List<TabGroupRule>();
     }
+
+    [DataContract]
+    internal sealed class ManualRegexEntry
+    {
+        [DataMember(Name = "groupName", IsRequired = false)]
+        public string GroupName { get; set; }
+
+        [DataMember(Name = "pattern", IsRequired = true)]
+        public string Pattern { get; set; }
+
+        [DataMember(Name = "priority", IsRequired = false)]
+        public int Priority { get; set; } = 50;
+
+        [DataMember(Name = "colorIndex", IsRequired = false)]
+        public int? ColorIndex { get; set; }
+    }
+
 
     [DataContract]
     internal sealed class TabGroupSettings
     {
-        [DataMember(Name = "enableAutoRename", IsRequired = false, Order = 0)]
+        [DataMember(Name = "enableLogging", IsRequired = false, Order = 0)]
+        public bool EnableLogging { get; set; } = true;
+
+        [DataMember(Name = "enableAutoRename", IsRequired = false, Order = 1)]
         public bool EnableAutoRename { get; set; } = true;
 
-        [DataMember(Name = "enableAutoColor", IsRequired = false, Order = 1)]
+        [DataMember(Name = "enableAutoColor", IsRequired = false, Order = 2)]
         public bool EnableAutoColor { get; set; } = false;
-
-        [DataMember(Name = "autoConfigure", IsRequired = false, Order = 2)]
-        public string AutoConfigure { get; set; }
 
         [DataMember(Name = "enableConfigurePrompt", IsRequired = false, Order = 3)]
         public bool EnableConfigurePrompt { get; set; } = true;
 
-        [DataMember(Name = "enableLogging", IsRequired = false, Order = 4)]
-        public bool EnableLogging { get; set; } = true;
+        [DataMember(Name = "enableConnectionPolling", IsRequired = false, Order = 4)]
+        public bool EnableConnectionPolling { get; set; } = true;
+
+        [DataMember(Name = "autoConfigure", IsRequired = false, Order = 5)]
+        public string AutoConfigure { get; set; }
+
+        [DataMember(Name = "newQueryRenameStyle", IsRequired = false, Order = 6)]
+        public string NewQueryRenameStyle { get; set; }
     }
 
     [DataContract]

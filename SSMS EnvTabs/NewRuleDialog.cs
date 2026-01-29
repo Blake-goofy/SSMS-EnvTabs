@@ -12,12 +12,23 @@ namespace SSMS_EnvTabs
         public string RuleName { get; private set; }
         public int SelectedColorIndex { get; private set; }
         public bool OpenConfigRequested { get; private set; }
+        
+        // New Alias Property
+        public string ServerAlias { get; private set; }
 
         private TextBox txtName;
         private ComboBox cmbColor;
         private Button btnSave;
         private Button btnCancel;
         private Button btnOpenConfig;
+        
+        // Alias Step Controls
+        private Panel panelAlias;
+        private Panel panelRule;
+        private TextBox txtAlias;
+        private Button btnNext;
+        private Button btnCancelAlias;
+        
         private Label lblHeader;
         private Label lblServerLabel;
         private Label lblServerValue;
@@ -26,6 +37,10 @@ namespace SSMS_EnvTabs
         private Label lblName;
         private Label lblColor;
         private Font boldFont;
+
+        private readonly string serverName;
+        private readonly string databaseName;
+        private readonly string existingAlias;
 
         private class ColorItem
         {
@@ -56,14 +71,74 @@ namespace SSMS_EnvTabs
             new ColorItem { Index = 15, Name = "Pink", Color = ColorTranslator.FromHtml("#e0a3a5") },
         };
 
-        public NewRuleDialog(string server, string database, string suggestedName, int suggestedColorIndex)
+        public class NewRuleDialogOptions
         {
-            InitializeComponent(server, database, suggestedColorIndex);
+            public string Server { get; set; }
+            public string Database { get; set; }
+            public string SuggestedName { get; set; }
+            public int SuggestedColorIndex { get; set; }
+            public string ExistingAlias { get; set; }
+        }
+
+        public NewRuleDialog(NewRuleDialogOptions options)
+        {
+            if (options == null) throw new ArgumentNullException(nameof(options));
+
+            this.serverName = options.Server;
+            this.databaseName = options.Database;
+            this.existingAlias = options.ExistingAlias;
+
+            InitializeComponent(options.Server, options.Database, options.SuggestedColorIndex);
+            
+            // If we have an existing alias, use it; otherwise, default alias is the server name.
+            this.ServerAlias = options.ExistingAlias ?? options.Server;
+
+            // Start at the correct step
+            if (string.IsNullOrWhiteSpace(options.ExistingAlias))
+            {
+                ShowAliasStep();
+                this.txtAlias.Text = options.Server; // Pre-fill with server name as default alias
+            }
+            else
+            {
+                ShowRuleStep();
+            }
+
             ApplyVsTheme();
             
-            txtName.Text = suggestedName;
-            RuleName = suggestedName;
-            SelectedColorIndex = suggestedColorIndex;
+            txtName.Text = options.SuggestedName;
+            RuleName = options.SuggestedName;
+            SelectedColorIndex = options.SuggestedColorIndex;
+        }
+
+        private void ShowAliasStep()
+        {
+            this.Text = "SSMS EnvTabs - Assign Server Alias";
+            panelAlias.Visible = true;
+            panelRule.Visible = false;
+            this.AcceptButton = btnNext;
+            this.CancelButton = btnCancelAlias;
+            txtAlias.Select();
+        }
+
+        private void ShowRuleStep()
+        {
+            this.Text = "SSMS EnvTabs - New Rule";
+            panelAlias.Visible = false;
+            panelRule.Visible = true;
+            
+            // Update Rule Name based on Alias if present
+            if (!string.IsNullOrWhiteSpace(ServerAlias))
+            {
+                if (string.IsNullOrWhiteSpace(databaseName))
+                    txtName.Text = ServerAlias;
+                else
+                    txtName.Text = $"{ServerAlias} {databaseName}";
+            }
+
+            this.AcceptButton = btnSave;
+            this.CancelButton = btnCancel;
+            txtName.Select();
         }
 
         private void InitializeComponent(string server, string database, int suggestedColorIndex)
@@ -72,7 +147,6 @@ namespace SSMS_EnvTabs
             Font scaledFont = new Font(baseFont.FontFamily, baseFont.Size + 1f);
             boldFont = new Font(scaledFont, FontStyle.Bold);
 
-            this.Text = "SSMS EnvTabs - New Rule";
             this.Size = new Size(430, 270);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -81,16 +155,20 @@ namespace SSMS_EnvTabs
             this.Font = scaledFont;
             this.AutoScaleMode = AutoScaleMode.Font;
 
+            // --- Panel 2: Rule (Existing) ---
+            panelRule = new Panel { Dock = DockStyle.Fill, Visible = false };
+            this.Controls.Add(panelRule);
+
             lblHeader = new Label
             {
                 Text = "New connection detected",
                 Location = new Point(16, 14),
                 AutoSize = true
             };
-            this.Controls.Add(lblHeader);
+            panelRule.Controls.Add(lblHeader);
 
             lblServerLabel = new Label { Text = "Server:", Location = new Point(16, 40), AutoSize = true };
-            this.Controls.Add(lblServerLabel);
+            panelRule.Controls.Add(lblServerLabel);
 
             lblServerValue = new Label
             {
@@ -99,10 +177,10 @@ namespace SSMS_EnvTabs
                 AutoSize = true,
                 Font = boldFont
             };
-            this.Controls.Add(lblServerValue);
+            panelRule.Controls.Add(lblServerValue);
 
             lblDatabaseLabel = new Label { Text = "Database:", Location = new Point(16, 62), AutoSize = true };
-            this.Controls.Add(lblDatabaseLabel);
+            panelRule.Controls.Add(lblDatabaseLabel);
 
             lblDatabaseValue = new Label
             {
@@ -111,16 +189,16 @@ namespace SSMS_EnvTabs
                 AutoSize = true,
                 Font = boldFont
             };
-            this.Controls.Add(lblDatabaseValue);
+            panelRule.Controls.Add(lblDatabaseValue);
 
             lblName = new Label { Text = "Group Name:", Location = new Point(16, 98), AutoSize = true };
-            this.Controls.Add(lblName);
+            panelRule.Controls.Add(lblName);
 
             txtName = new TextBox { Location = new Point(130, 94), Size = new Size(270, 26) };
-            this.Controls.Add(txtName);
+            panelRule.Controls.Add(txtName);
 
             lblColor = new Label { Text = "Color:", Location = new Point(16, 132), AutoSize = true };
-            this.Controls.Add(lblColor);
+            panelRule.Controls.Add(lblColor);
 
             cmbColor = new ComboBox 
             { 
@@ -131,7 +209,7 @@ namespace SSMS_EnvTabs
                 FlatStyle = FlatStyle.Flat,
                 ItemHeight = 22
             };
-            this.Controls.Add(cmbColor);
+            panelRule.Controls.Add(cmbColor);
 
             // Prepare ordered list with suggested color FIRST
             var orderedList = new List<ColorItem>();
@@ -148,12 +226,68 @@ namespace SSMS_EnvTabs
             }
 
             cmbColor.DrawItem += CmbColor_DrawItem;
-            
-            // Set DataSource after adding to controls to ensure BindingContext is ready
             cmbColor.DataSource = orderedList;
             
-            // Note: DataSource automatically sets SelectedIndex to 0 if list is not empty.
-            // We rely on that behavior since orderedList[0] is our desired selection.
+            btnSave = new Button { Text = "Save", Location = new Point(90, 190), Size = new Size(90, 30), DialogResult = DialogResult.OK };
+            btnSave.Click += (s, e) => { RuleName = txtName.Text; SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; };
+            panelRule.Controls.Add(btnSave);
+
+            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
+            panelRule.Controls.Add(btnCancel);
+
+            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
+            btnOpenConfig.Click += (s, e) => { 
+                RuleName = txtName.Text; 
+                SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; 
+                OpenConfigRequested = true; 
+            };
+            panelRule.Controls.Add(btnOpenConfig);
+
+
+            // --- Panel 1: Alias (New) ---
+            panelAlias = new Panel { Dock = DockStyle.Fill, Visible = false };
+            this.Controls.Add(panelAlias);
+
+            var lblAliasHeader = new Label
+            {
+                Text = "Assign an alias for this server",
+                Location = new Point(16, 14),
+                AutoSize = true,
+                Font = boldFont
+            };
+            panelAlias.Controls.Add(lblAliasHeader);
+
+            var lblAliasServer = new Label { Text = $"Server: {server}", Location = new Point(16, 50), AutoSize = true };
+            panelAlias.Controls.Add(lblAliasServer);
+
+            var lblAliasPrompt = new Label { Text = "Alias:", Location = new Point(16, 90), AutoSize = true };
+            panelAlias.Controls.Add(lblAliasPrompt);
+
+            txtAlias = new TextBox { Location = new Point(80, 86), Size = new Size(250, 26) };
+            panelAlias.Controls.Add(txtAlias);
+
+            btnNext = new Button { Text = "Next >", Location = new Point(230, 190), Size = new Size(90, 30) };
+            btnNext.Click += (s, e) => {
+                if (string.IsNullOrWhiteSpace(txtAlias.Text))
+                {
+                    ServerAlias = serverName;
+                }
+                else
+                {
+                    ServerAlias = txtAlias.Text.Trim();
+                }
+                ShowRuleStep();
+            };
+            panelAlias.Controls.Add(btnNext);
+
+            btnCancelAlias = new Button { Text = "Cancel", Location = new Point(330, 190), Size = new Size(75, 30) };
+            // If they cancel the alias dialog, we proceed to rule creation BUT alias = ServerName.
+            btnCancelAlias.Click += (s, e) => {
+                ServerAlias = serverName; // Default to server name
+                ShowRuleStep();
+            };
+            panelAlias.Controls.Add(btnCancelAlias);
+            
 
             this.FormClosing += (s, e) =>
             {
@@ -166,24 +300,6 @@ namespace SSMS_EnvTabs
                     }
                 }
             };
-
-            btnSave = new Button { Text = "Save", Location = new Point(90, 190), Size = new Size(90, 30), DialogResult = DialogResult.OK };
-            btnSave.Click += (s, e) => { RuleName = txtName.Text; SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; };
-            this.Controls.Add(btnSave);
-
-            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
-            this.Controls.Add(btnCancel);
-
-            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
-            btnOpenConfig.Click += (s, e) => { 
-                RuleName = txtName.Text; 
-                SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; 
-                OpenConfigRequested = true; 
-            };
-            this.Controls.Add(btnOpenConfig);
-            
-            this.AcceptButton = btnSave;
-            this.CancelButton = btnCancel;
         }
 
         private void ApplyVsTheme()
@@ -199,8 +315,8 @@ namespace SSMS_EnvTabs
                 Color accentBg = VSColorTheme.GetThemedColor(EnvironmentColors.SystemHighlightColorKey);
                 Color accentFg = VSColorTheme.GetThemedColor(EnvironmentColors.SystemHighlightTextColorKey);
 
-                this.BackColor = bgColor;
-                this.ForeColor = fgColor;
+                BackColor = bgColor;
+                ForeColor = fgColor;
 
                 // Labels inherit parent usually
                 lblHeader.ForeColor = fgColor;
@@ -210,19 +326,26 @@ namespace SSMS_EnvTabs
                 lblColor.ForeColor = fgColor;
                 lblServerValue.ForeColor = fgColor;
                 lblDatabaseValue.ForeColor = fgColor;
-
+                
+                // Labels in Panel 1
+                foreach(Control c in panelAlias.Controls)
+                {
+                     if(c is Label) c.ForeColor = fgColor;
+                }
+                
                 // TextBoxes
                 txtName.BackColor = txtBg;
                 txtName.ForeColor = txtFg;
+                
+                txtAlias.BackColor = txtBg;
+                txtAlias.ForeColor = txtFg;
                 
                 // ComboBox
                 cmbColor.BackColor = txtBg;
                 cmbColor.ForeColor = txtFg;
 
                 // Buttons
-                // WinForms Buttons are hard to style perfectly flat without custom painting,
-                // but we can try to make them blend in.
-                foreach (var btn in new[] { btnCancel, btnOpenConfig })
+                foreach (var btn in new[] { btnCancel, btnOpenConfig, btnCancelAlias })
                 {
                     btn.FlatStyle = FlatStyle.Flat;
                     btn.BackColor = bgColor; 
@@ -230,10 +353,13 @@ namespace SSMS_EnvTabs
                     btn.FlatAppearance.BorderColor = fgColor;
                 }
 
-                btnSave.FlatStyle = FlatStyle.Flat;
-                btnSave.BackColor = accentBg;
-                btnSave.ForeColor = accentFg;
-                btnSave.FlatAppearance.BorderColor = accentBg;
+                foreach (var btn in new[] { btnSave, btnNext })
+                {
+                    btn.FlatStyle = FlatStyle.Flat;
+                    btn.BackColor = accentBg;
+                    btn.ForeColor = accentFg;
+                    btn.FlatAppearance.BorderColor = accentBg;
+                }
             }
             catch
             {

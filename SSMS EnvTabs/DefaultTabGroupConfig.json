@@ -1,18 +1,37 @@
 {
   "description": "Configuration for SSMS EnvTabs. Controls how query tabs are renamed and colored based on server database connection.",
-  "version": "1.0.0",
+  "help": "https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide",
+  "version": "1.2.0",
   "settings": {
+    "enableLogging": false,
     "enableAutoRename": true,
     "enableAutoColor": true,
-    "autoConfigure": "server db",
     "enableConfigurePrompt": true,
-    "enableLogging": false
+    "enableConnectionPolling": true,
+    "autoConfigure": "server db",
+    "newQueryRenameStyle": "[#]. [groupName]"
   },
-  "help": "https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide",
-  "groups": [
+  "manualRegexLines": [
+    {
+      "groupName": "Example: error check",
+      "pattern": "^error_check\\.sql$",
+      "priority": 0,
+      "colorIndex": 5
+    },
+    {
+      "groupName": "Example: important script",
+      "pattern": "^important_script\\.sql$",
+      "priority": 20,
+      "colorIndex": 8
+    }
+  ],
+  "serverAlias": {
+    "MY-APP-SERVER": "AppServer"
+  },
+  "connectionGroups": [
     {
       "groupName": "Example: Exact Match",
-      "server": "MY-SERVER",
+      "server": "MY-APP-SERVER",
       "database": "MyDatabase",
       "priority": 10,
       "colorIndex": 9

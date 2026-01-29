@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7" Version="1.0.0" Language="en-US" Publisher="Blake Becker" />
+        <Identity Id="SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7" Version="1.2.0" Language="en-US" Publisher="Blake Becker" />
         <DisplayName>SSMS EnvTabs</DisplayName>
         <Description xml:space="preserve">Auto-color and rename SSMS query tabs based on connection/server rules.</Description>
     </Metadata>
