@@ -321,8 +321,9 @@ namespace SSMS_EnvTabs
                     return frame;
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
+                EnvTabsLog.Verbose($"TryGetFrameFromMoniker - Error: {ex.Message}");
                 return null;
             }
 
@@ -350,7 +351,10 @@ namespace SSMS_EnvTabs
                     return true;
                 }
             }
-            catch {}
+            catch (Exception ex)
+            {
+                EnvTabsLog.Verbose($"IsRenameEligible - File name parse failed: {ex.Message}");
+            }
 
             return false;
         }
@@ -365,7 +369,10 @@ namespace SSMS_EnvTabs
                     return true;
                 }
             }
-            catch {}
+            catch (Exception ex)
+            {
+                EnvTabsLog.Verbose($"IsTempFile - Temp path check failed: {ex.Message}");
+            }
             return false;
         }
 

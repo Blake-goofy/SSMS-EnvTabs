@@ -10,6 +10,7 @@ namespace SSMS_EnvTabs
         private static readonly string LogPath = ResolveLogPath();
         private static readonly object LogLock = new object();
         public static bool Enabled { get; set; } = false;
+        public static bool VerboseEnabled { get; set; } = false;
 
         private static string ResolveLogPath()
         {
@@ -63,6 +64,12 @@ namespace SSMS_EnvTabs
             }
 
             WriteToFile("ERROR", message);
+        }
+
+        public static void Verbose(string message)
+        {
+            if (!Enabled || !VerboseEnabled) return;
+            Info(message);
         }
 
         private static void WriteToFile(string level, string message)

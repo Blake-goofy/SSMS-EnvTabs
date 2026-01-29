@@ -14,6 +14,7 @@ namespace SSMS_EnvTabs
         private const string EndMarker = "// SSMS EnvTabs: END generated";
         private const int ResolveRetryMax = 6;
         private const int ResolveRetryDelayMs = 500;
+        private const int TempScanBackoffMs = 3000;
         private const double CreationSkewSeconds = 2.0;
         private const double CreationMaxWindowSeconds = 30.0;
 
@@ -21,6 +22,8 @@ namespace SSMS_EnvTabs
         private DateTime? firstDocSeenUtc;
         private bool resolveRetryScheduled;
         private int resolveRetryCount;
+        private DateTime? lastTempScanUtc;
+        private readonly object tempScanLock = new object();
         private List<RdtEventManager.OpenDocumentInfo> lastDocsSnapshot;
         private IReadOnlyList<TabRuleMatcher.CompiledRule> lastRulesSnapshot;
         private IReadOnlyList<TabRuleMatcher.CompiledManualRule> lastManualRulesSnapshot;
@@ -44,28 +47,44 @@ namespace SSMS_EnvTabs
 
             var safeRules = rules ?? Array.Empty<TabRuleMatcher.CompiledRule>();
             bool hasManualRules = manualRules != null && manualRules.Count > 0;
-            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules={safeRules.Count}, ManualRules={(manualRules?.Count ?? 0)}, Docs={lastDocsSnapshot.Count}");
+            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules={safeRules.Count}, ManualRules={(manualRules?.Count ?? 0)}, Docs={lastDocsSnapshot.Count}");
             if (safeRules.Count == 0 && !hasManualRules)
             {
-                EnvTabsLog.Info("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - No rules to write. Skipping.");
+                EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - No rules to write. Skipping.");
                 return;
             }
 
             string configPath = ResolveConfigPath(lastDocsSnapshot.Select(d => d?.Moniker));
             if (string.IsNullOrWhiteSpace(configPath))
             {
-                EnvTabsLog.Info("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Config path not resolved. Skipping.");
+                EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Config path not resolved. Skipping.");
                 ScheduleResolveRetryIfNeeded();
+                StartTempScanIfNeeded();
                 return;
             }
             resolveRetryCount = 0;
             resolveRetryScheduled = false;
-            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='{configPath}'");
+            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='{configPath}'");
 
             var groupToPaths = safeRules.Count > 0 ? BuildGroupPathMap(lastDocsSnapshot, safeRules) : null;
-            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths={(groupToPaths?.Count ?? 0)}");
-            string newContent = BuildConfigContent(configPath, groupToPaths, safeRules, manualRules);
-            WriteIfChanged(configPath, newContent);
+            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths={(groupToPaths?.Count ?? 0)}");
+            var rulesSnapshot = safeRules;
+            var manualRulesSnapshot = manualRules;
+            var groupToPathsSnapshot = groupToPaths;
+            var configPathSnapshot = configPath;
+
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    string newContent = BuildConfigContent(configPathSnapshot, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
+                    WriteIfChanged(configPathSnapshot, newContent);
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Background write failed: {ex.Message}");
+                }
+            });
         }
 
         private struct RegexEntry
@@ -237,7 +256,7 @@ namespace SSMS_EnvTabs
             {
                 string currentFull = baseRegex;
                 int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(currentFull);
-                int currentColor = TabGroupColorSolver.GetColorIndex(currentHash);
+                int currentColor = Math.Abs(currentHash) % 16;
 
                 if (currentColor != rule.ColorIndex)
                 {
@@ -304,7 +323,7 @@ namespace SSMS_EnvTabs
             string existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
             if (string.Equals(NormalizeNewlines(existing), NormalizeNewlines(content ?? string.Empty), StringComparison.Ordinal))
             {
-                EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for '{path}'.");
+                EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for '{path}'.");
                 return;
             }
 
@@ -315,7 +334,7 @@ namespace SSMS_EnvTabs
             }
 
             string tmp = path + ".tmp";
-            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::WriteIfChanged - Writing file '{path}'.");
+            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::WriteIfChanged - Writing file '{path}'.");
             File.WriteAllText(tmp, content ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             if (File.Exists(path))
@@ -352,13 +371,13 @@ namespace SSMS_EnvTabs
 
             resolveRetryScheduled = true;
             int attempt = ++resolveRetryCount;
-            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Resolve retry scheduled ({attempt}/{ResolveRetryMax}) in {ResolveRetryDelayMs}ms.");
+            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Resolve retry scheduled ({attempt}/{ResolveRetryMax}) in {ResolveRetryDelayMs}ms.");
 
-            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            _ = System.Threading.Tasks.Task.Run(async () =>
             {
                 try
                 {
-                    await System.Threading.Tasks.Task.Delay(ResolveRetryDelayMs).ConfigureAwait(true);
+                    await System.Threading.Tasks.Task.Delay(ResolveRetryDelayMs).ConfigureAwait(false);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                     resolveRetryScheduled = false;
@@ -393,14 +412,6 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            // Scan Temp until the file appears.
-            string fallback = TryScanTempForConfig(firstDocSeenUtc);
-            if (!string.IsNullOrWhiteSpace(fallback))
-            {
-                resolvedConfigPath = fallback;
-                return fallback;
-            }
-
             return null;
         }
 
@@ -424,7 +435,7 @@ namespace SSMS_EnvTabs
                 string guidRoot = TryGetTempGuidRoot(current);
                 if (!string.IsNullOrWhiteSpace(guidRoot))
                 {
-                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryGetConfigPathFromMoniker - Temp GUID root='{guidRoot}'");
+                    EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryGetConfigPathFromMoniker - Temp GUID root='{guidRoot}'");
                     string candidate = Path.Combine(guidRoot, "ColorByRegexConfig.txt");
                     if (File.Exists(candidate))
                     {
@@ -458,7 +469,7 @@ namespace SSMS_EnvTabs
             {
                 if (!referenceUtc.HasValue)
                 {
-                    EnvTabsLog.Info("ColorByRegexConfigWriter.cs::TryScanTempForConfig - No firstDocSeenUtc; skipping temp scan.");
+                    EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::TryScanTempForConfig - No firstDocSeenUtc; skipping temp scan.");
                     return null;
                 }
 
@@ -497,7 +508,7 @@ namespace SSMS_EnvTabs
                             continue;
                         }
 
-                        EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - FirstDocSeenUtc={referenceUtc:O}, RegexFolderCreateUtc={dirCreateUtc:O}, DeltaSeconds={deltaSeconds:0.###}, FileExists={fileExists}, Folder='{entry.Dir}'");
+                        EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - FirstDocSeenUtc={referenceUtc:O}, RegexFolderCreateUtc={dirCreateUtc:O}, DeltaSeconds={deltaSeconds:0.###}, FileExists={fileExists}, Folder='{entry.Dir}'");
                         if (fileExists)
                         {
                             return candidate;
@@ -508,12 +519,58 @@ namespace SSMS_EnvTabs
                         // Ignore access errors
                     }
                 }
-                EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - No candidate found. FirstDocSeenUtc={referenceUtc:O}");
+                EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - No candidate found. FirstDocSeenUtc={referenceUtc:O}");
                 return null;
             }
             catch
             {
                 return null;
+            }
+        }
+
+        private void StartTempScanIfNeeded()
+        {
+            if (!TryBeginTempScan())
+            {
+                return;
+            }
+
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    string fallback = TryScanTempForConfig(firstDocSeenUtc);
+                    if (string.IsNullOrWhiteSpace(fallback))
+                    {
+                        return;
+                    }
+
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    resolvedConfigPath = fallback;
+                    if (lastDocsSnapshot != null)
+                    {
+                        UpdateFromSnapshot(lastDocsSnapshot, lastRulesSnapshot, lastManualRulesSnapshot);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::StartTempScanIfNeeded - Scan failed: {ex.Message}");
+                }
+            });
+        }
+
+        private bool TryBeginTempScan()
+        {
+            lock (tempScanLock)
+            {
+                var now = DateTime.UtcNow;
+                if (lastTempScanUtc.HasValue && (now - lastTempScanUtc.Value).TotalMilliseconds < TempScanBackoffMs)
+                {
+                    return false;
+                }
+
+                lastTempScanUtc = now;
+                return true;
             }
         }
 

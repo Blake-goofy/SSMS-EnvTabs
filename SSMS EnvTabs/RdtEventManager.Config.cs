@@ -50,7 +50,11 @@ namespace SSMS_EnvTabs
             foreach (var doc in docs)
             {
                 string fileName = null;
-                try { fileName = System.IO.Path.GetFileName(doc.Moniker); } catch { }
+                try { fileName = System.IO.Path.GetFileName(doc.Moniker); }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Verbose($"LogColorSnapshot - File name parse failed: {ex.Message}");
+                }
                 string group = TabRuleMatcher.MatchGroup(rules, doc.Server, doc.Database);
                 EnvTabsLog.Info($"Tab: Cookie={doc.Cookie}, Server='{doc.Server}', Database='{doc.Database}', Group='{group}', File='{fileName}', Moniker='{doc.Moniker}'");
             }

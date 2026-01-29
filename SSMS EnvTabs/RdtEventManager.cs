@@ -112,7 +112,7 @@ namespace SSMS_EnvTabs
 
             // Poll for connection changes on active/open documents (SSMS often does not raise RDT events on connection switches)
             connectionPollTimer = new Timer(ConnectionPollTick, null, ConnectionPollIntervalMs, ConnectionPollIntervalMs);
-            EnvTabsLog.Info("RdtEventManager.cs::Start - Connection polling enabled.");
+            EnvTabsLog.Verbose("RdtEventManager.cs::Start - Connection polling enabled.");
             
             try
             {
@@ -148,7 +148,10 @@ namespace SSMS_EnvTabs
                 debounceCts?.Cancel();
                 debounceCts?.Dispose();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Verbose($"RdtEventManager.Dispose - Cleanup failed: {ex.Message}");
+            }
 
             try
             {
@@ -375,7 +378,7 @@ namespace SSMS_EnvTabs
                     }
 
                     renameRetryCounts[docCookie] = i + 1;
-                    EnvTabsLog.Info($"RenameRetry: Reason={reason}, Cookie={docCookie}, Attempt={i + 1}");
+                    EnvTabsLog.Verbose($"RenameRetry: Reason={reason}, Cookie={docCookie}, Attempt={i + 1}");
 
                     string moniker = TryGetMonikerFromCookie(docCookie);
                     if (!IsSqlDocumentMoniker(moniker))
@@ -460,7 +463,7 @@ namespace SSMS_EnvTabs
 
                     if (serverChanged || databaseChanged)
                     {
-                        EnvTabsLog.Info($"RdtEventManager.cs::PollConnectionChanges - Detected connection change. Cookie={doc.Cookie}, '{previous.Server}.{previous.Database}' -> '{newServer}.{newDatabase}'");
+                        EnvTabsLog.Verbose($"RdtEventManager.cs::PollConnectionChanges - Detected connection change. Cookie={doc.Cookie}, '{previous.Server}.{previous.Database}' -> '{newServer}.{newDatabase}'");
                         lastConnectionByCookie[doc.Cookie] = (newServer, newDatabase);
                         HandlePotentialChange(doc.Cookie, doc.Frame, "ConnectionPoll");
                     }
