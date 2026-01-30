@@ -10,11 +10,10 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 
 ## Key Features
 
-- **Smart Tab Renaming** - Automatically prefix query tabs with environment names (e.g., "1. Prod", "1. QA")
 - **Color-Coded Tabs** - 16 distinct colors to visually separate different environments
-- **Flexible Rules** - Pattern matching with wildcards for server and database names
-- **Auto-Configuration** - Automatically create rules for new connections
-- **Priority-Based** - Control which rules match first with priority ordering
+- **Tab Renaming** - Automatically name query tabs with environment names (e.g., "1. Prod", "1. QA")
+- **Auto-Configuration** - Automatically create rules for new connections (retained between sessions)
+- **Manual-Regex** - Add your own regex that you want applied to the ColorByRegexConfig.txt file (retained between sessions)
 
 ## Getting Started
 
