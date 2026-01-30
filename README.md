@@ -41,12 +41,12 @@ When you connect to a server or database that doesn't have a matching rule, EnvT
     "newQueryRenameStyle": "[#]. [groupName]"
   },
   "serverAlias": {
-    "MY-APP-SERVER": "AppServer"
+    "MY-LONG-SERVER-NAME": "AppServer"
   },
   "connectionGroups": [
     {
       "groupName": "Example: Exact Match",
-      "server": "MY-APP-SERVER",
+      "server": "MY-LONG-SERVER-NAME",
       "database": "MyDatabase",
       "priority": 10,
       "colorIndex": 9
