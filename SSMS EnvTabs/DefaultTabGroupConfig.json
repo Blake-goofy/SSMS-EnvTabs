@@ -11,20 +11,7 @@
     "autoConfigure": "server db",
     "newQueryRenameStyle": "[#]. [groupName]"
   },
-  "manualRegexLines": [
-    {
-      "groupName": "Example: error check",
-      "pattern": "^error_check\\.sql$",
-      "priority": 0,
-      "colorIndex": 5
-    },
-    {
-      "groupName": "Example: important script",
-      "pattern": "^important_script\\.sql$",
-      "priority": 20,
-      "colorIndex": 8
-    }
-  ],
+  "manualRegexLines": null,
   "serverAlias": {
     "MY-APP-SERVER": "AppServer"
   },

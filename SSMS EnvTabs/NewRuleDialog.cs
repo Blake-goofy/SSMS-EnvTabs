@@ -78,6 +78,7 @@ namespace SSMS_EnvTabs
             public string SuggestedName { get; set; }
             public int SuggestedColorIndex { get; set; }
             public string ExistingAlias { get; set; }
+            public bool HideDatabaseRow { get; set; }
         }
 
         public NewRuleDialog(NewRuleDialogOptions options)
@@ -88,7 +89,7 @@ namespace SSMS_EnvTabs
             this.databaseName = options.Database;
             this.existingAlias = options.ExistingAlias;
 
-            InitializeComponent(options.Server, options.Database, options.SuggestedColorIndex);
+            InitializeComponent(options.Server, options.Database, options.SuggestedColorIndex, options.HideDatabaseRow);
             
             // If we have an existing alias, use it; otherwise, default alias is the server name.
             this.ServerAlias = options.ExistingAlias ?? options.Server;
@@ -141,13 +142,14 @@ namespace SSMS_EnvTabs
             txtName.Select();
         }
 
-        private void InitializeComponent(string server, string database, int suggestedColorIndex)
+        private void InitializeComponent(string server, string database, int suggestedColorIndex, bool hideDatabaseRow)
         {
             Font baseFont = SystemFonts.MessageBoxFont;
             Font scaledFont = new Font(baseFont.FontFamily, baseFont.Size + 1f);
             boldFont = new Font(scaledFont, FontStyle.Bold);
 
-            this.Size = new Size(430, 270);
+            int yShift = hideDatabaseRow ? 32 : 0;
+            this.Size = new Size(430, 270 - yShift);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.MaximizeBox = false;
@@ -179,30 +181,33 @@ namespace SSMS_EnvTabs
             };
             panelRule.Controls.Add(lblServerValue);
 
-            lblDatabaseLabel = new Label { Text = "Database:", Location = new Point(16, 62), AutoSize = true };
-            panelRule.Controls.Add(lblDatabaseLabel);
-
-            lblDatabaseValue = new Label
+            if (!hideDatabaseRow)
             {
-                Text = database ?? "(any)",
-                Location = new Point(90, 62),
-                AutoSize = true,
-                Font = boldFont
-            };
-            panelRule.Controls.Add(lblDatabaseValue);
+                lblDatabaseLabel = new Label { Text = "Database:", Location = new Point(16, 62), AutoSize = true };
+                panelRule.Controls.Add(lblDatabaseLabel);
 
-            lblName = new Label { Text = "Group Name:", Location = new Point(16, 98), AutoSize = true };
+                lblDatabaseValue = new Label
+                {
+                    Text = database ?? "(any)",
+                    Location = new Point(90, 62),
+                    AutoSize = true,
+                    Font = boldFont
+                };
+                panelRule.Controls.Add(lblDatabaseValue);
+            }
+
+            lblName = new Label { Text = "Group Name:", Location = new Point(16, 98 - yShift), AutoSize = true };
             panelRule.Controls.Add(lblName);
 
-            txtName = new TextBox { Location = new Point(130, 94), Size = new Size(270, 26) };
+            txtName = new TextBox { Location = new Point(130, 94 - yShift), Size = new Size(270, 26) };
             panelRule.Controls.Add(txtName);
 
-            lblColor = new Label { Text = "Color:", Location = new Point(16, 132), AutoSize = true };
+            lblColor = new Label { Text = "Color:", Location = new Point(16, 132 - yShift), AutoSize = true };
             panelRule.Controls.Add(lblColor);
 
             cmbColor = new ComboBox 
             { 
-                Location = new Point(130, 128), 
+                Location = new Point(130, 128 - yShift), 
                 Size = new Size(270, 26),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DrawMode = DrawMode.OwnerDrawFixed,
@@ -228,14 +233,14 @@ namespace SSMS_EnvTabs
             cmbColor.DrawItem += CmbColor_DrawItem;
             cmbColor.DataSource = orderedList;
             
-            btnSave = new Button { Text = "Save", Location = new Point(90, 190), Size = new Size(90, 30), DialogResult = DialogResult.OK };
+            btnSave = new Button { Text = "Save", Location = new Point(90, 190 - yShift), Size = new Size(90, 30), DialogResult = DialogResult.OK };
             btnSave.Click += (s, e) => { RuleName = txtName.Text; SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; };
             panelRule.Controls.Add(btnSave);
 
-            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
+            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190 - yShift), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
             panelRule.Controls.Add(btnCancel);
 
-            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
+            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190 - yShift), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
             btnOpenConfig.Click += (s, e) => { 
                 RuleName = txtName.Text; 
                 SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; 
@@ -321,11 +326,19 @@ namespace SSMS_EnvTabs
                 // Labels inherit parent usually
                 lblHeader.ForeColor = fgColor;
                 lblServerLabel.ForeColor = fgColor;
-                lblDatabaseLabel.ForeColor = fgColor;
                 lblName.ForeColor = fgColor;
                 lblColor.ForeColor = fgColor;
                 lblServerValue.ForeColor = fgColor;
-                lblDatabaseValue.ForeColor = fgColor;
+
+                if (lblDatabaseLabel != null)
+                {
+                    lblDatabaseLabel.ForeColor = fgColor;
+                }
+
+                if (lblDatabaseValue != null)
+                {
+                    lblDatabaseValue.ForeColor = fgColor;
+                }
                 
                 // Labels in Panel 1
                 foreach(Control c in panelAlias.Controls)
@@ -336,10 +349,10 @@ namespace SSMS_EnvTabs
                 // TextBoxes
                 txtName.BackColor = txtBg;
                 txtName.ForeColor = txtFg;
-                
+
                 txtAlias.BackColor = txtBg;
                 txtAlias.ForeColor = txtFg;
-                
+
                 // ComboBox
                 cmbColor.BackColor = txtBg;
                 cmbColor.ForeColor = txtFg;

@@ -119,10 +119,11 @@ namespace SSMS_EnvTabs
                     var dialogOptions = new NewRuleDialog.NewRuleDialogOptions
                     {
                         Server = server,
-                        Database = database,
+                        Database = !useDb ? null : database,
                         SuggestedName = suggestedName,
                         SuggestedColorIndex = nextColor,
-                        ExistingAlias = existingAlias
+                        ExistingAlias = (!useDb && string.IsNullOrEmpty(existingAlias)) ? server : existingAlias,
+                        HideDatabaseRow = !useDb
                     };
 
                     using (var dlg = new NewRuleDialog(dialogOptions))
