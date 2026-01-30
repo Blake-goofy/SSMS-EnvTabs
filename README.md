@@ -6,6 +6,7 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 
 ![SSMS Version](https://img.shields.io/badge/SSMS-22.0%2B-blue)
 ![.NET Framework](https://img.shields.io/badge/.NET-4.7.2%2B-purple)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Key Features
 
