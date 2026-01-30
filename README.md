@@ -20,7 +20,13 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 
 1.  **Install**: Download the latest `.vsix` from [GitHub Releases](https://github.com/Blake-goofy/SSMS-EnvTabs/releases) and run the installer.
 2.  **Enable Coloring**: In SSMS, ensure *Tools > Options > Environment > Tabs and Windows > "Color document tabs by regular expression"* is selected.
-3.  **Configure**: Go to **Tools > EnvTabs: Configure Rules...** to define your connection groups.
+3.  **Enjoy**: That's it, just open a new query and you will be guided to assign a name and color to the new connection.
+
+### On-Demand Configuration
+
+When you connect to a server or database that doesn't have a matching rule, EnvTabs will prompt you to configure it. This ensures you only create rules for the connections you actually use!
+
+![Configuration Prompt](images/config-prompt-colors.png)
 
 ### Example Configuration
 
@@ -50,25 +56,19 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 }
 
 ```
-
-### On-Demand Configuration
-
-When you connect to a server or database that doesn't have a matching rule, EnvTabs will prompt you to configure it. This ensures you only create rules for the connections you actually use!
-
-![Configuration Prompt](images/config-prompt-colors.png)
-
-The prompt allows you to assign a group name and select a color from the visual dropdown.
-
 ## Documentation
 
 Full documentation is available in the [GitHub Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
-*   **[Installation Guide](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Installation-Guide)** - Setup instructions and troubleshooting.
-*   **[Configuration Guide](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)** - Complete reference for settings and rules.
-*   **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)** - Visual guide for the 16 available colors.
-*   **[Wildcard Patterns](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Wildcard-Patterns)** - How to use SQL-like wildcards for matching.
-*   **[How it works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)** - Technical deep dive into the coloring mechanism.
-*   **[Troubleshooting](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Troubleshooting)** - Common issues and solutions.
+- **[Installation](Installation-Guide)**: Setup and requirements.
+- **[Configuration](Configuration-Guide)**: Global settings and prompts.
+- **[Group Rules](Group-Rules)**: Creating rules for your servers.
+- **[Manual Regex Rules](Manual-Regex)**: Advanced regex matching overrides.
+- **[Tab Text Settings](Tab-Text-Settings)**: How to clean up tab text.
+- **[Color Reference](Color-Reference)**: List of available colors (0-15).
+- **[Wildcard Patterns](Wildcard-Patterns)**: Matching syntax.
+- **[How it Works](How-it-works)**: Technical details.
+- **[Troubleshooting](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Troubleshooting)**: Common issues and solutions.
 
 ## Support & Contributing
 
