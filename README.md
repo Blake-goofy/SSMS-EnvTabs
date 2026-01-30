@@ -59,14 +59,14 @@ When you connect to a server or database that doesn't have a matching rule, EnvT
 
 Full documentation is available in the [GitHub Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
-- **[Installation](Installation-Guide)**: Setup and requirements.
-- **[Configuration](Configuration-Guide)**: Global settings and prompts.
-- **[Group Rules](Group-Rules)**: Creating rules for your servers.
-- **[Manual Regex Rules](Manual-Regex)**: Advanced regex matching overrides.
-- **[Tab Text Settings](Tab-Text-Settings)**: How to clean up tab text.
-- **[Color Reference](Color-Reference)**: List of available colors (0-15).
-- **[Wildcard Patterns](Wildcard-Patterns)**: Matching syntax.
-- **[How it Works](How-it-works)**: Technical details.
+- **[Installation](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Installation-Guide)**: Setup and requirements.
+- **[Configuration](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)**: Global settings and prompts.
+- **[Group Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Group-Rules)**: Creating rules for your servers.
+- **[Manual Regex Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Manual-Regex)**: Advanced regex matching overrides.
+- **[Tab Text Settings](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Text-Settings)**: How to clean up tab text.
+- **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)**: List of available colors (0-15).
+- **[Wildcard Patterns](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Wildcard-Patterns)**: Matching syntax.
+- **[How it Works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)**: Technical details.
 - **[Troubleshooting](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Troubleshooting)**: Common issues and solutions.
 
 ## Support & Contributing
