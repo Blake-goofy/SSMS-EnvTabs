@@ -58,23 +58,25 @@ namespace SSMS_EnvTabs
                 return;
             }
 
+            bool enableAutoRename = config.Settings.EnableAutoRename != false;
+
             // Prepare suggested values
             int nextColor = FindNextColorValues(config);
             string suggestedName;
             
-            // Check for Server Alias
+            // Check for Server Alias (only used when auto-rename is enabled)
             if (config.ServerAliases == null)
             {
                 config.ServerAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             }
             
             string existingAlias = null;
-            if (config.ServerAliases.TryGetValue(server, out string alias))
+            if (enableAutoRename && config.ServerAliases.TryGetValue(server, out string alias))
             {
                 existingAlias = alias;
             }
 
-            if (useDb && !string.IsNullOrWhiteSpace(database))
+              if (useDb && !string.IsNullOrWhiteSpace(database))
             {
                  // If alias exists, use it. e.g. "SCALE20 ILS"
                  string prefix = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
@@ -122,8 +124,10 @@ namespace SSMS_EnvTabs
                         Database = !useDb ? null : database,
                         SuggestedName = suggestedName,
                         SuggestedColorIndex = nextColor,
-                        ExistingAlias = (!useDb && string.IsNullOrEmpty(existingAlias)) ? server : existingAlias,
-                        HideDatabaseRow = !useDb
+                        ExistingAlias = enableAutoRename ? ((!useDb && string.IsNullOrEmpty(existingAlias)) ? server : existingAlias) : null,
+                        HideDatabaseRow = !useDb,
+                        HideAliasStep = !enableAutoRename,
+                        HideGroupNameRow = !enableAutoRename
                     };
 
                     using (var dlg = new NewRuleDialog(dialogOptions))
@@ -142,20 +146,32 @@ namespace SSMS_EnvTabs
 
                             bool configChanged = false;
 
-                            // Update Alias if new
-                            if (!string.IsNullOrWhiteSpace(dlg.ServerAlias) && 
-                                (!string.Equals(dlg.ServerAlias, existingAlias, StringComparison.Ordinal)))
+                            if (enableAutoRename)
                             {
-                                config.ServerAliases[server] = dlg.ServerAlias;
-                                configChanged = true;
-                            }
+                                // Update Alias if new
+                                if (!string.IsNullOrWhiteSpace(dlg.ServerAlias) && 
+                                    (!string.Equals(dlg.ServerAlias, existingAlias, StringComparison.Ordinal)))
+                                {
+                                    config.ServerAliases[server] = dlg.ServerAlias;
+                                    configChanged = true;
+                                }
 
-                            // User wants to change rule
-                            if (updatedName != newRule.GroupName || updatedColor != newRule.ColorIndex)
+                                // User wants to change rule name/color
+                                if (updatedName != newRule.GroupName || updatedColor != newRule.ColorIndex)
+                                {
+                                    newRule.GroupName = updatedName;
+                                    newRule.ColorIndex = updatedColor;
+                                    configChanged = true;
+                                }
+                            }
+                            else
                             {
-                                newRule.GroupName = updatedName;
-                                newRule.ColorIndex = updatedColor;
-                                configChanged = true;
+                                // Color-only mode: only update color
+                                if (updatedColor != newRule.ColorIndex)
+                                {
+                                    newRule.ColorIndex = updatedColor;
+                                    configChanged = true;
+                                }
                             }
                             
                             if (configChanged)

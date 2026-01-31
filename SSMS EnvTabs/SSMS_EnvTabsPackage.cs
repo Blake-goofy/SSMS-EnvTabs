@@ -40,6 +40,7 @@ namespace SSMS_EnvTabs
             if (initialConfig?.Settings != null)
             {
                 EnvTabsLog.Enabled = initialConfig.Settings.EnableLogging;
+                SsmsSettingsUpdater.EnsureRegexTabColorizationEnabled(initialConfig.Settings.EnableAutoColor);
             }
 
             EnvTabsLog.Info("SSMS EnvTabs package initialized.");

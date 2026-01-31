@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.Shell;
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.IO;
 using System.Linq;
@@ -70,6 +71,7 @@ namespace SSMS_EnvTabs
             OnConfigChanged(sender, e);
         }
 
+        [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]
         private void OnConfigChanged(object sender, FileSystemEventArgs e)
         {
             try
@@ -134,29 +136,32 @@ namespace SSMS_EnvTabs
 
             // Rename
             int renamedCount = 0;
-            try
+            if (config.Settings?.EnableAutoRename != false)
             {
-                var renameCandidates = docs
-                    .Where(doc => !string.IsNullOrWhiteSpace(doc?.Moniker)) // Filter empty?
-                    .Select(doc => new TabRenameContext
-                    {
-                        Cookie = doc.Cookie,
-                        Frame = doc.Frame,
-                        Server = doc.Server,
-                        Database = doc.Database,
-                        FrameCaption = doc.Caption,
-                        Moniker = doc.Moniker
-                    })
-                    .ToList();
-
-                if (renameCandidates.Count > 0)
+                try
                 {
-                    renamedCount = TabRenamer.ApplyRenamesOrThrow(renameCandidates, rules, manualRules, config.Settings?.NewQueryRenameStyle);
+                    var renameCandidates = docs
+                        .Where(doc => !string.IsNullOrWhiteSpace(doc?.Moniker)) // Filter empty?
+                        .Select(doc => new TabRenameContext
+                        {
+                            Cookie = doc.Cookie,
+                            Frame = doc.Frame,
+                            Server = doc.Server,
+                            Database = doc.Database,
+                            FrameCaption = doc.Caption,
+                            Moniker = doc.Moniker
+                        })
+                        .ToList();
+
+                    if (renameCandidates.Count > 0)
+                    {
+                        renamedCount = TabRenamer.ApplyRenamesOrThrow(renameCandidates, rules, manualRules, config.Settings?.NewQueryRenameStyle);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                EnvTabsLog.Info($"Reload rename failed: {ex.Message}");
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Reload rename failed: {ex.Message}");
+                }
             }
 
             // Color

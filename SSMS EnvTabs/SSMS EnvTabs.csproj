@@ -57,6 +57,7 @@
     <Compile Include="RdtEventManager.Config.cs" />
     <Compile Include="RdtEventManager.Documents.cs" />
     <Compile Include="RdtEventManager.Events.cs" />
+    <Compile Include="SsmsSettingsUpdater.cs" />
     <Compile Include="SSMS_EnvTabsPackage.cs" />
     <Compile Include="TabGroupConfigLoader.cs" />
     <Compile Include="TabGroupConfigModels.cs" />

@@ -95,6 +95,7 @@ namespace SSMS_EnvTabs
                 TabRenamer.ForgetCookie(docCookie);
                 renameRetryCounts.Remove(docCookie);
                 lastConnectionByCookie.Remove(docCookie);
+                lastCaptionByCookie.Remove(docCookie);
 
                 UpdateColorOnly("LastDocumentUnlock");
             }

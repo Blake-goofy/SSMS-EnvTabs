@@ -41,6 +41,9 @@ namespace SSMS_EnvTabs
         private readonly string serverName;
         private readonly string databaseName;
         private readonly string existingAlias;
+        private readonly string suggestedName;
+        private readonly bool hideAliasStep;
+        private readonly bool hideGroupNameRow;
 
         private class ColorItem
         {
@@ -79,6 +82,8 @@ namespace SSMS_EnvTabs
             public int SuggestedColorIndex { get; set; }
             public string ExistingAlias { get; set; }
             public bool HideDatabaseRow { get; set; }
+            public bool HideAliasStep { get; set; }
+            public bool HideGroupNameRow { get; set; }
         }
 
         public NewRuleDialog(NewRuleDialogOptions options)
@@ -88,6 +93,9 @@ namespace SSMS_EnvTabs
             this.serverName = options.Server;
             this.databaseName = options.Database;
             this.existingAlias = options.ExistingAlias;
+            this.suggestedName = options.SuggestedName;
+            this.hideAliasStep = options.HideAliasStep;
+            this.hideGroupNameRow = options.HideGroupNameRow;
 
             InitializeComponent(options.Server, options.Database, options.SuggestedColorIndex, options.HideDatabaseRow);
             
@@ -95,7 +103,7 @@ namespace SSMS_EnvTabs
             this.ServerAlias = options.ExistingAlias ?? options.Server;
 
             // Start at the correct step
-            if (string.IsNullOrWhiteSpace(options.ExistingAlias))
+            if (!hideAliasStep && string.IsNullOrWhiteSpace(options.ExistingAlias))
             {
                 ShowAliasStep();
                 this.txtAlias.Text = options.Server; // Pre-fill with server name as default alias
@@ -107,7 +115,10 @@ namespace SSMS_EnvTabs
 
             ApplyVsTheme();
             
-            txtName.Text = options.SuggestedName;
+            if (txtName != null)
+            {
+                txtName.Text = options.SuggestedName;
+            }
             RuleName = options.SuggestedName;
             SelectedColorIndex = options.SuggestedColorIndex;
         }
@@ -129,7 +140,7 @@ namespace SSMS_EnvTabs
             panelRule.Visible = true;
             
             // Update Rule Name based on Alias if present
-            if (!string.IsNullOrWhiteSpace(ServerAlias))
+            if (!hideGroupNameRow && txtName != null && !string.IsNullOrWhiteSpace(ServerAlias))
             {
                 if (string.IsNullOrWhiteSpace(databaseName))
                     txtName.Text = ServerAlias;
@@ -139,7 +150,14 @@ namespace SSMS_EnvTabs
 
             this.AcceptButton = btnSave;
             this.CancelButton = btnCancel;
-            txtName.Select();
+            if (txtName != null)
+            {
+                txtName.Select();
+            }
+            else
+            {
+                cmbColor?.Select();
+            }
         }
 
         private void InitializeComponent(string server, string database, int suggestedColorIndex, bool hideDatabaseRow)
@@ -149,6 +167,7 @@ namespace SSMS_EnvTabs
             boldFont = new Font(scaledFont, FontStyle.Bold);
 
             int yShift = hideDatabaseRow ? 32 : 0;
+            int nameRowShift = hideGroupNameRow ? 30 : 0;
             this.Size = new Size(430, 270 - yShift);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -196,18 +215,23 @@ namespace SSMS_EnvTabs
                 panelRule.Controls.Add(lblDatabaseValue);
             }
 
-            lblName = new Label { Text = "Group Name:", Location = new Point(16, 98 - yShift), AutoSize = true };
-            panelRule.Controls.Add(lblName);
+            int nameRowOffset = hideGroupNameRow ? 0 : 30;
 
-            txtName = new TextBox { Location = new Point(130, 94 - yShift), Size = new Size(270, 26) };
-            panelRule.Controls.Add(txtName);
+            if (!hideGroupNameRow)
+            {
+                lblName = new Label { Text = "Group Name:", Location = new Point(16, 98 - yShift), AutoSize = true };
+                panelRule.Controls.Add(lblName);
 
-            lblColor = new Label { Text = "Color:", Location = new Point(16, 132 - yShift), AutoSize = true };
+                txtName = new TextBox { Location = new Point(130, 94 - yShift), Size = new Size(270, 26) };
+                panelRule.Controls.Add(txtName);
+            }
+
+            lblColor = new Label { Text = "Color:", Location = new Point(16, 132 - yShift - nameRowOffset), AutoSize = true };
             panelRule.Controls.Add(lblColor);
 
             cmbColor = new ComboBox 
             { 
-                Location = new Point(130, 128 - yShift), 
+                Location = new Point(130, 128 - yShift - nameRowOffset), 
                 Size = new Size(270, 26),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DrawMode = DrawMode.OwnerDrawFixed,
@@ -233,16 +257,26 @@ namespace SSMS_EnvTabs
             cmbColor.DrawItem += CmbColor_DrawItem;
             cmbColor.DataSource = orderedList;
             
-            btnSave = new Button { Text = "Save", Location = new Point(90, 190 - yShift), Size = new Size(90, 30), DialogResult = DialogResult.OK };
-            btnSave.Click += (s, e) => { RuleName = txtName.Text; SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; };
+            btnSave = new Button { Text = "Save", Location = new Point(90, 190 - yShift - nameRowOffset), Size = new Size(90, 30), DialogResult = DialogResult.OK };
+            btnSave.Click += (s, e) => {
+                if (txtName != null)
+                {
+                    RuleName = txtName.Text;
+                }
+                else
+                {
+                    RuleName = suggestedName;
+                }
+                SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index;
+            };
             panelRule.Controls.Add(btnSave);
 
-            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190 - yShift), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
+            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190 - yShift - nameRowOffset), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
             panelRule.Controls.Add(btnCancel);
 
-            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190 - yShift), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
+            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190 - yShift - nameRowOffset), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
             btnOpenConfig.Click += (s, e) => { 
-                RuleName = txtName.Text; 
+                RuleName = txtName != null ? txtName.Text : suggestedName; 
                 SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; 
                 OpenConfigRequested = true; 
             };
@@ -298,7 +332,14 @@ namespace SSMS_EnvTabs
             {
                 if (this.DialogResult == DialogResult.OK || this.DialogResult == DialogResult.Yes)
                 {
-                    RuleName = txtName.Text;
+                    if (txtName != null)
+                    {
+                        RuleName = txtName.Text;
+                    }
+                    else
+                    {
+                        RuleName = suggestedName;
+                    }
                     if (cmbColor.SelectedItem is ColorItem item)
                     {
                         SelectedColorIndex = item.Index;
@@ -326,7 +367,10 @@ namespace SSMS_EnvTabs
                 // Labels inherit parent usually
                 lblHeader.ForeColor = fgColor;
                 lblServerLabel.ForeColor = fgColor;
-                lblName.ForeColor = fgColor;
+                if (lblName != null)
+                {
+                    lblName.ForeColor = fgColor;
+                }
                 lblColor.ForeColor = fgColor;
                 lblServerValue.ForeColor = fgColor;
 
@@ -347,8 +391,11 @@ namespace SSMS_EnvTabs
                 }
                 
                 // TextBoxes
-                txtName.BackColor = txtBg;
-                txtName.ForeColor = txtFg;
+                if (txtName != null)
+                {
+                    txtName.BackColor = txtBg;
+                    txtName.ForeColor = txtFg;
+                }
 
                 txtAlias.BackColor = txtBg;
                 txtAlias.ForeColor = txtFg;

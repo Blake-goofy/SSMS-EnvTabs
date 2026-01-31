@@ -29,6 +29,7 @@ namespace SSMS_EnvTabs
 
         private readonly Dictionary<uint, int> renameRetryCounts = new Dictionary<uint, int>();
         private readonly Dictionary<uint, (string Server, string Database)> lastConnectionByCookie = new Dictionary<uint, (string Server, string Database)>();
+        private readonly Dictionary<uint, string> lastCaptionByCookie = new Dictionary<uint, string>();
         private FileSystemWatcher configWatcher;
         private CancellationTokenSource debounceCts;
         private readonly object debounceLock = new object();
@@ -198,6 +199,11 @@ namespace SSMS_EnvTabs
             {
                 string caption = TryReadFrameCaption(frame);
                 string moniker = frameMoniker;
+
+                if (IsExecutingCaption(caption))
+                {
+                    return true;
+                }
                 
                 // If the reason is AttributeChange (connection change), we should attempt rename even if it doesn't look eligible anymore (e.g. if it was already renamed)
                 // because the user is changing the connection to something new.
@@ -207,9 +213,18 @@ namespace SSMS_EnvTabs
                     reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0
                 );
 
-                if (forceCheck || IsRenameEligible(moniker, caption))
+                if (TryGetConnectionInfo(frame, out string server, out string database))
                 {
-                    if (TryGetConnectionInfo(frame, out string server, out string database))
+                    var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
+                    string matchedGroup = manualMatch?.GroupName ?? TabRuleMatcher.MatchGroup(rules, server, database);
+                    bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+
+                    bool captionMissingGroup = !string.IsNullOrWhiteSpace(matchedGroup)
+                        && (string.IsNullOrWhiteSpace(caption) || caption.IndexOf(matchedGroup, StringComparison.OrdinalIgnoreCase) < 0);
+
+                    bool shouldRename = forceCheck || IsRenameEligible(moniker, caption) || captionMissingGroup;
+
+                    if (shouldRename)
                     {
                         try
                         {
@@ -224,35 +239,10 @@ namespace SSMS_EnvTabs
                             };
                             string style = config.Settings?.NewQueryRenameStyle;
                             renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { ctx }, rules, manualRules, style);
-                            
-                            // Check for match explicitly to avoid duplicate rules if rename fails
-                            string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
-                            var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
-                            bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+
                             if (renamedCount > 0)
                             {
                                 EnvTabsLog.Info($"Renamed tab. Reason={reason}, Cookie={docCookie}, Server='{server}', DB='{database}', Count={renamedCount}");
-                            }
-
-                            // Auto-Configure logic if no rule matched
-                            if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
-                            {
-                                // Check if this server/db actually matched any existing rule?
-                                // TabRenamer returns 0 if no match found.
-                                // But we should verify we haven't already processed it.
-                                // We need to be careful not to spam prompts on initial load.
-                                // Only prompt if this is a "valid" connection (has text).
-                                if (!string.IsNullOrWhiteSpace(server))
-                                {
-                                    EnvTabsLog.Info($"AutoConfigure: No matching rule. Reason={reason}, Cookie={docCookie}, Server='{server}', DB='{database}'");
-                                    autoConfigTriggered = true;
-                                    // Dispatch to UI thread later to avoid blocking RDT event
-                                    _ = package.JoinableTaskFactory.RunAsync(async () =>
-                                    {
-                                        await package.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                        AutoConfigurationService.ProposeNewRule(config, server, database);
-                                    });
-                                }
                             }
                         }
                         catch (Exception ex)
@@ -260,26 +250,15 @@ namespace SSMS_EnvTabs
                             EnvTabsLog.Info($"Rename failed ({reason}) cookie={docCookie}: {ex.Message}");
                         }
                     }
-                    else
-                    {
-                        // Needs retry if connection info not found yet
-                        needsRetry = true;
-                    }
-                }
-                else
-                {
-                    // If not eligible for rename (e.g. already renamed, or not a temp file),
-                    // still attempt connection lookup and auto-config if no match exists.
-                    if (TryGetConnectionInfo(frame, out string server, out string database))
-                    {
-                        string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
-                        var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
-                        bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
 
-                        if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure) && !string.IsNullOrWhiteSpace(server))
+                    // Auto-Configure logic if no rule matched
+                    if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
+                    {
+                        if (!string.IsNullOrWhiteSpace(server))
                         {
-                            EnvTabsLog.Info($"AutoConfigure: No matching rule (non-rename). Reason={reason}, Cookie={docCookie}, Server='{server}', DB='{database}'");
+                            EnvTabsLog.Info($"AutoConfigure: No matching rule. Reason={reason}, Cookie={docCookie}, Server='{server}', DB='{database}'");
                             autoConfigTriggered = true;
+                            // Dispatch to UI thread later to avoid blocking RDT event
                             _ = package.JoinableTaskFactory.RunAsync(async () =>
                             {
                                 await package.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -287,6 +266,11 @@ namespace SSMS_EnvTabs
                             });
                         }
                     }
+                }
+                else
+                {
+                    // Needs retry if connection info not found yet
+                    needsRetry = true;
                 }
             }
             else
@@ -324,7 +308,9 @@ namespace SSMS_EnvTabs
                 reason.IndexOf("FirstDocumentLock", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("AttributeChangeEx", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                reason.IndexOf("ActiveFrameChanged", StringComparison.OrdinalIgnoreCase) >= 0
+                reason.IndexOf("ActiveFrameChanged", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("ConnectionPoll", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("CaptionPoll", StringComparison.OrdinalIgnoreCase) >= 0
             );
 
             bool shouldUpdateColor = !needsRetry && (renamedCount > 0 || isConnectionEvent || autoConfigTriggered);
@@ -406,6 +392,12 @@ namespace SSMS_EnvTabs
             });
         }
 
+        private static bool IsExecutingCaption(string caption)
+        {
+            if (string.IsNullOrWhiteSpace(caption)) return false;
+            return caption.StartsWith("Executing...", StringComparison.OrdinalIgnoreCase);
+        }
+
         private void ConnectionPollTick(object state)
         {
             _ = package.JoinableTaskFactory.RunAsync(async () =>
@@ -472,6 +464,30 @@ namespace SSMS_EnvTabs
                 {
                     // First observation for this cookie (no log; only log on change)
                     lastConnectionByCookie[doc.Cookie] = (newServer, newDatabase);
+
+                    if (config.Settings?.EnableAutoRename == false && config.Settings?.EnableAutoColor == true)
+                    {
+                        HandlePotentialChange(doc.Cookie, doc.Frame, "ConnectionPoll:Initial");
+                    }
+                }
+
+                // Caption change detection (execution resets to default)
+                string caption = doc.Caption ?? string.Empty;
+                bool hadPreviousCaption = lastCaptionByCookie.TryGetValue(doc.Cookie, out string previousCaption);
+                bool captionChanged = !hadPreviousCaption || !string.Equals(previousCaption ?? string.Empty, caption, StringComparison.OrdinalIgnoreCase);
+                if (captionChanged)
+                {
+                    lastCaptionByCookie[doc.Cookie] = caption;
+
+                    if (!IsExecutingCaption(caption))
+                    {
+                        EnvTabsLog.Verbose($"CaptionPoll: Detected caption change. Cookie={doc.Cookie}, Caption='{caption}'");
+                        bool done = HandlePotentialChange(doc.Cookie, doc.Frame, "CaptionPoll");
+                        if (!done)
+                        {
+                            ScheduleRenameRetry(doc.Cookie, "CaptionPoll");
+                        }
+                    }
                 }
             }
 
@@ -480,6 +496,7 @@ namespace SSMS_EnvTabs
             foreach (var cookie in staleCookies)
             {
                 lastConnectionByCookie.Remove(cookie);
+                lastCaptionByCookie.Remove(cookie);
             }
             }
             finally
