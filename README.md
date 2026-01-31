@@ -15,17 +15,21 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 - **Auto-Configuration** - Automatically create rules for new connections (retained between sessions)
 - **Manual-Regex** - Add your own regex that you want applied to the ColorByRegexConfig.txt file (retained between sessions)
 
-## Getting Started
+## Install
+Download the latest `.vsix` from [GitHub Releases](https://github.com/Blake-goofy/SSMS-EnvTabs/releases) and run the installer.
 
-1.  **Install**: Download the latest `.vsix` from [GitHub Releases](https://github.com/Blake-goofy/SSMS-EnvTabs/releases) and run the installer.
-2.  **Enable Coloring**: In SSMS, ensure *Tools > Options > Environment > Tabs and Windows > "Color document tabs by regular expression"* is selected.
-3.  **Enjoy**: That's it, just open a new query and you will be guided to assign a name and color to the new connection.
 
 ### On-Demand Configuration
 
 When you connect to a server or database that doesn't have a matching rule, EnvTabs will prompt you to configure it. This ensures you only create rules for the connections you actually use!
 
 ![Configuration Prompt](images/config-prompt-colors.png)
+
+### Change Tab Color
+
+You can also change a tab color directly in SSMS. Right-click the query tab, choose **Set Tab Color**, and pick a color.
+
+![Set Tab Color](images/set-tab-color.png)
 
 ### Example Configuration
 
