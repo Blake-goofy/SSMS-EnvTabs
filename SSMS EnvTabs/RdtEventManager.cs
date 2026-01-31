@@ -31,8 +31,13 @@ namespace SSMS_EnvTabs
         private readonly Dictionary<uint, (string Server, string Database)> lastConnectionByCookie = new Dictionary<uint, (string Server, string Database)>();
         private readonly Dictionary<uint, string> lastCaptionByCookie = new Dictionary<uint, string>();
         private FileSystemWatcher configWatcher;
+        private FileSystemWatcher groupColorWatcher;
         private CancellationTokenSource debounceCts;
         private readonly object debounceLock = new object();
+        private CancellationTokenSource groupColorDebounceCts;
+        private readonly object groupColorDebounceLock = new object();
+        private string groupColorWatcherDir;
+        private string lastColorConfigPath;
         private Timer connectionPollTimer;
 
         private TabGroupConfig cachedConfig;
@@ -87,6 +92,7 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
             
             AutoConfigurationService.DialogClosed += OnAutoConfigDialogClosed;
+            colorWriter.ConfigPathResolved += OnColorConfigPathResolved;
 
             try
             {
@@ -140,14 +146,18 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
 
             AutoConfigurationService.DialogClosed -= OnAutoConfigDialogClosed;
+            colorWriter.ConfigPathResolved -= OnColorConfigPathResolved;
 
             try
             {
                 connectionPollTimer?.Dispose();
                 connectionPollTimer = null;
                 configWatcher?.Dispose();
+                groupColorWatcher?.Dispose();
                 debounceCts?.Cancel();
                 debounceCts?.Dispose();
+                groupColorDebounceCts?.Cancel();
+                groupColorDebounceCts?.Dispose();
             }
             catch (Exception ex)
             {

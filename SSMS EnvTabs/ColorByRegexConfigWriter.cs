@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -27,6 +29,8 @@ namespace SSMS_EnvTabs
         private List<RdtEventManager.OpenDocumentInfo> lastDocsSnapshot;
         private IReadOnlyList<TabRuleMatcher.CompiledRule> lastRulesSnapshot;
         private IReadOnlyList<TabRuleMatcher.CompiledManualRule> lastManualRulesSnapshot;
+
+        public event Action<string> ConfigPathResolved;
 
         public void UpdateFromSnapshot(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules)
         {
@@ -66,6 +70,15 @@ namespace SSMS_EnvTabs
             resolveRetryScheduled = false;
             EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='{configPath}'");
 
+            try
+            {
+                ConfigPathResolved?.Invoke(configPath);
+            }
+            catch
+            {
+                // Best-effort
+            }
+
             var groupToPaths = safeRules.Count > 0 ? BuildGroupPathMap(lastDocsSnapshot, safeRules) : null;
             EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths={(groupToPaths?.Count ?? 0)}");
             var rulesSnapshot = safeRules;
@@ -97,21 +110,39 @@ namespace SSMS_EnvTabs
         {
             var entries = new List<RegexEntry>();
 
+            // Preserve content outside markers.
+            string existing = File.Exists(existingPath) ? File.ReadAllText(existingPath) : string.Empty;
+            var groupIdColorMap = TryLoadGroupIdColorMap(existingPath);
+            var overrideColorByBaseRegex = BuildOverrideColorByBaseRegex(existing, groupIdColorMap);
+
             // Manual rules
             if (manualRules != null)
             {
                 foreach (var m in manualRules)
                 {
-                    string line = m.OriginalPattern;
-                    if (m.ColorIndex.HasValue)
+                    string original = m.OriginalPattern;
+                    string baseRegex = StripSaltComment(original);
+                    string line = original;
+                    if (overrideColorByBaseRegex != null && overrideColorByBaseRegex.TryGetValue(baseRegex, out int overrideColor))
                     {
                         try
                         {
-                            line = TabGroupColorSolver.SolveForColor(m.OriginalPattern, m.ColorIndex.Value);
+                            line = ApplyColorIndex(baseRegex, overrideColor);
                         }
                         catch
                         {
-                            line = m.OriginalPattern;
+                            line = original;
+                        }
+                    }
+                    else if (m.ColorIndex.HasValue)
+                    {
+                        try
+                        {
+                            line = ApplyColorIndex(baseRegex, m.ColorIndex.Value);
+                        }
+                        catch
+                        {
+                            line = original;
                         }
                     }
                     entries.Add(new RegexEntry { Pattern = line, Priority = m.Priority });
@@ -125,7 +156,8 @@ namespace SSMS_EnvTabs
                 {
                     if (groupToPaths.TryGetValue(rule.GroupName, out var paths) && paths.Count > 0)
                     {
-                        string line = BuildResolvedRegexLine(paths, rule);
+                        string baseRegex = BuildBaseRegex(paths);
+                        string line = BuildResolvedRegexLine(baseRegex, rule, overrideColorByBaseRegex);
                         entries.Add(new RegexEntry { Pattern = line, Priority = rule.Priority });
                     }
                 }
@@ -133,8 +165,6 @@ namespace SSMS_EnvTabs
 
             var sortedEntries = entries.OrderBy(e => e.Priority).ToList();
 
-            // Preserve content outside markers.
-            string existing = File.Exists(existingPath) ? File.ReadAllText(existingPath) : string.Empty;
             var generatedLines = new List<string>();
 
             generatedLines.Add(BeginMarker);
@@ -146,6 +176,52 @@ namespace SSMS_EnvTabs
 
             return ReplaceOrAppendBlock(existing, generatedLines);
         }        
+
+        internal Dictionary<string, int> TryGetOverrideColorsByBaseRegex(string configPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(configPath) || !File.Exists(configPath))
+                {
+                    return null;
+                }
+
+                string existing = File.ReadAllText(configPath);
+                var groupIdColorMap = TryLoadGroupIdColorMap(configPath);
+                return BuildOverrideColorByBaseRegex(existing, groupIdColorMap);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        internal Dictionary<string, string> BuildGroupNameToBaseRegex(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
+        {
+            if (docs == null || rules == null || rules.Count == 0)
+            {
+                return null;
+            }
+
+            var groupToPaths = BuildGroupPathMap(docs, rules);
+            if (groupToPaths == null || groupToPaths.Count == 0)
+            {
+                return null;
+            }
+
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rule in rules)
+            {
+                groupToPaths.TryGetValue(rule.GroupName, out var paths);
+                string baseRegex = BuildBaseRegex(paths);
+                if (!string.IsNullOrWhiteSpace(baseRegex))
+                {
+                    result[rule.GroupName] = StripSaltComment(baseRegex);
+                }
+            }
+
+            return result.Count > 0 ? result : null;
+        }
 
         internal string BuildGeneratedBlockPreview(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules)
         {
@@ -219,14 +295,36 @@ namespace SSMS_EnvTabs
             foreach (var rule in rules.OrderBy(r => r.Priority).ThenBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase))
             {
                 groupToPaths.TryGetValue(rule.GroupName, out var paths);
-                lines.Add(BuildResolvedRegexLine(paths, rule));
+                string baseRegex = BuildBaseRegex(paths);
+                lines.Add(BuildResolvedRegexLine(baseRegex, rule, null));
             }
 
             lines.Add(EndMarker);
             return lines;
         }
 
-        private static string BuildResolvedRegexLine(SortedSet<string> paths, TabRuleMatcher.CompiledRule rule)
+        private static string BuildResolvedRegexLine(string baseRegex, TabRuleMatcher.CompiledRule rule, Dictionary<string, int> overrideColorByBaseRegex)
+        {
+            if (string.IsNullOrWhiteSpace(baseRegex))
+            {
+                return "(?!)";
+            }
+
+            string normalizedBase = StripSaltComment(baseRegex);
+            if (overrideColorByBaseRegex != null && overrideColorByBaseRegex.TryGetValue(normalizedBase, out int overrideColor))
+            {
+                return ApplyColorIndex(normalizedBase, overrideColor);
+            }
+
+            if (rule.ColorIndex >= 0)
+            {
+                return ApplyColorIndex(normalizedBase, rule.ColorIndex);
+            }
+
+            return normalizedBase;
+        }
+
+        private static string BuildBaseRegex(SortedSet<string> paths)
         {
             if (paths == null || paths.Count == 0)
             {
@@ -248,33 +346,182 @@ namespace SSMS_EnvTabs
             }
 
             // Match path ending with the filename.
-            string baseRegex = $"(?:^|[\\\\/])(?:{string.Join("|", escaped)}){suffix}$";
+            return $"(?:^|[\\\\/])(?:{string.Join("|", escaped)}){suffix}$";
+        }
 
-            // If the rule specifies a color index, solve for a salt.
-            string salt = null;
-            if (rule.ColorIndex >= 0)
+        private static string ApplyColorIndex(string baseRegex, int targetColorIndex)
+        {
+            if (string.IsNullOrWhiteSpace(baseRegex))
             {
-                string currentFull = baseRegex;
-                int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(currentFull);
-                int currentColor = Math.Abs(currentHash) % 16;
+                return baseRegex;
+            }
 
-                if (currentColor != rule.ColorIndex)
+            if (targetColorIndex < 0 || targetColorIndex > 15)
+            {
+                return baseRegex;
+            }
+
+            int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(baseRegex);
+            int currentColor = Math.Abs(currentHash) % 16;
+            if (currentColor == targetColorIndex)
+            {
+                return baseRegex;
+            }
+
+            string newSalt = TabGroupColorSolver.Solve(baseRegex, targetColorIndex);
+            if (!string.IsNullOrWhiteSpace(newSalt))
+            {
+                return baseRegex + $"(?#salt:{newSalt})";
+            }
+
+            return baseRegex;
+        }
+
+        private static string StripSaltComment(string regexLine)
+        {
+            if (string.IsNullOrWhiteSpace(regexLine))
+            {
+                return regexLine;
+            }
+
+            string trimmed = regexLine.Trim();
+            return Regex.Replace(trimmed, "\\(\\?#salt:[^)]*\\)", string.Empty);
+        }
+
+        private static Dictionary<int, int> TryLoadGroupIdColorMap(string configPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(configPath))
                 {
-                    string newSalt = TabGroupColorSolver.Solve(baseRegex, rule.ColorIndex);
-                    if (newSalt != null)
+                    return null;
+                }
+
+                string dir = Path.GetDirectoryName(configPath);
+                if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+                {
+                    return null;
+                }
+
+                var candidates = Directory.GetFiles(dir, "customized-groupid-color-*.json");
+                if (candidates == null || candidates.Length == 0)
+                {
+                    return null;
+                }
+
+                string latest = candidates
+                    .Select(path => new { Path = path, LastWriteUtc = File.GetLastWriteTimeUtc(path) })
+                    .OrderByDescending(x => x.LastWriteUtc)
+                    .Select(x => x.Path)
+                    .FirstOrDefault();
+
+                if (string.IsNullOrWhiteSpace(latest) || !File.Exists(latest))
+                {
+                    return null;
+                }
+
+                using (var stream = File.OpenRead(latest))
+                {
+                    var serializer = new DataContractJsonSerializer(typeof(GroupIdColorMapFile), new DataContractJsonSerializerSettings
                     {
-                        salt = newSalt;
+                        UseSimpleDictionaryFormat = true
+                    });
+
+                    var data = serializer.ReadObject(stream) as GroupIdColorMapFile;
+                    if (data?.ColorMap == null || data.ColorMap.Count == 0)
+                    {
+                        return null;
+                    }
+
+                    var result = new Dictionary<int, int>();
+                    foreach (var kvp in data.ColorMap)
+                    {
+                        if (kvp.Value == null)
+                        {
+                            continue;
+                        }
+
+                        int groupId = kvp.Value.GroupId;
+                        int colorIndex = kvp.Value.ColorIndex;
+                        if (colorIndex < 0 || colorIndex > 15)
+                        {
+                            continue;
+                        }
+
+                        result[groupId] = colorIndex;
+                    }
+
+                    return result.Count > 0 ? result : null;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Dictionary<string, int> BuildOverrideColorByBaseRegex(string existingContent, Dictionary<int, int> groupIdColorMap)
+        {
+            if (groupIdColorMap == null || groupIdColorMap.Count == 0)
+            {
+                return null;
+            }
+
+            var lines = SplitLines(existingContent);
+            int begin = lines.FindIndex(line => string.Equals(line?.TrimEnd(), BeginMarker, StringComparison.Ordinal));
+            int end = lines.FindIndex(line => string.Equals(line?.TrimEnd(), EndMarker, StringComparison.Ordinal));
+
+            if (begin < 0 || end < begin)
+            {
+                return null;
+            }
+
+            var overrides = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = begin + 1; i < end; i++)
+            {
+                string line = lines[i]?.Trim();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("//", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                int groupId = TabGroupColorSolver.GetSsmsStableHashCode(line);
+                if (groupIdColorMap.TryGetValue(groupId, out int desiredColor))
+                {
+                    string baseRegex = StripSaltComment(line);
+                    if (!string.IsNullOrWhiteSpace(baseRegex))
+                    {
+                        overrides[baseRegex] = desiredColor;
                     }
                 }
             }
 
-            string finalRegex = baseRegex;
-            if (!string.IsNullOrWhiteSpace(salt)) 
-            {
-                finalRegex += $"(?#salt:{salt})";
-            }
-            
-            return finalRegex;
+            return overrides.Count > 0 ? overrides : null;
+        }
+
+        [DataContract]
+        private sealed class GroupIdColorMapFile
+        {
+            [DataMember(Name = "Version")]
+            public int Version { get; set; }
+
+            [DataMember(Name = "ColorMap")]
+            public Dictionary<string, GroupIdColorEntry> ColorMap { get; set; }
+        }
+
+        [DataContract]
+        private sealed class GroupIdColorEntry
+        {
+            [DataMember(Name = "GroupId")]
+            public int GroupId { get; set; }
+
+            [DataMember(Name = "ColorIndex")]
+            public int ColorIndex { get; set; }
         }
 
         private static string ReplaceOrAppendBlock(string existing, List<string> generatedLines)

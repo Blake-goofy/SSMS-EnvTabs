@@ -3,6 +3,8 @@ using System.Diagnostics.CodeAnalysis;
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Json;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -31,6 +33,47 @@ namespace SSMS_EnvTabs
         private bool IsColorUpdateSuppressed()
         {
             return DateTime.UtcNow < suppressColorUpdatesUntilUtc;
+        }
+
+        private void OnColorConfigPathResolved(string configPath)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (string.IsNullOrWhiteSpace(configPath))
+            {
+                return;
+            }
+
+            lastColorConfigPath = configPath;
+
+            string dir = Path.GetDirectoryName(configPath);
+            if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+            {
+                return;
+            }
+
+            if (string.Equals(dir, groupColorWatcherDir, StringComparison.OrdinalIgnoreCase) && groupColorWatcher != null)
+            {
+                return;
+            }
+
+            try
+            {
+                groupColorWatcher?.Dispose();
+                groupColorWatcher = new FileSystemWatcher(dir, "customized-groupid-color-*.json");
+                groupColorWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size | NotifyFilters.FileName;
+                groupColorWatcher.Changed += OnGroupColorMapChanged;
+                groupColorWatcher.Created += OnGroupColorMapChanged;
+                groupColorWatcher.Renamed += OnGroupColorMapChanged;
+                groupColorWatcher.EnableRaisingEvents = true;
+                groupColorWatcherDir = dir;
+
+                EnvTabsLog.Verbose($"RdtEventManager.Config.cs::OnColorConfigPathResolved - Watching '{dir}' for group color overrides.");
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Group color watcher setup failed: {ex.Message}");
+            }
         }
 
         private void LogColorSnapshot(string reason)
@@ -69,6 +112,131 @@ namespace SSMS_EnvTabs
         private void OnConfigRenamed(object sender, RenamedEventArgs e)
         {
             OnConfigChanged(sender, e);
+        }
+
+        [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]
+        private void OnGroupColorMapChanged(object sender, FileSystemEventArgs e)
+        {
+            try
+            {
+                CancellationToken token;
+                lock (groupColorDebounceLock)
+                {
+                    groupColorDebounceCts?.Cancel();
+                    groupColorDebounceCts = new CancellationTokenSource();
+                    token = groupColorDebounceCts.Token;
+                }
+
+                _ = package.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    try
+                    {
+                        EnvTabsLog.Info($"Group color override event: {e.ChangeType} - {e.FullPath}");
+                        await Task.Delay(500, token);
+                        await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
+                        ApplyGroupColorOverridesToConfig();
+                        UpdateColorOnly("GroupColorMapChanged", force: true);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Ignored
+                    }
+                    catch (Exception ex)
+                    {
+                        EnvTabsLog.Info($"Group color override reload failed: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"OnGroupColorMapChanged error: {ex.Message}");
+            }
+        }
+
+        private void ApplyGroupColorOverridesToConfig()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (string.IsNullOrWhiteSpace(lastColorConfigPath))
+            {
+                return;
+            }
+
+            var config = LoadConfigOrNull();
+            if (config?.ConnectionGroups == null || config.ConnectionGroups.Count == 0)
+            {
+                return;
+            }
+
+            var rules = cachedRules ?? TabRuleMatcher.CompileRules(config);
+            var docs = GetOpenDocumentsSnapshot();
+
+            var overrideByBaseRegex = colorWriter.TryGetOverrideColorsByBaseRegex(lastColorConfigPath);
+            if (overrideByBaseRegex == null || overrideByBaseRegex.Count == 0)
+            {
+                return;
+            }
+
+            var groupToBaseRegex = colorWriter.BuildGroupNameToBaseRegex(docs, rules);
+            if (groupToBaseRegex == null || groupToBaseRegex.Count == 0)
+            {
+                return;
+            }
+
+            bool updated = false;
+            foreach (var rule in config.ConnectionGroups)
+            {
+                if (rule == null || string.IsNullOrWhiteSpace(rule.GroupName))
+                {
+                    continue;
+                }
+
+                if (groupToBaseRegex.TryGetValue(rule.GroupName, out string baseRegex)
+                    && overrideByBaseRegex.TryGetValue(baseRegex, out int newColor)
+                    && rule.ColorIndex != newColor)
+                {
+                    EnvTabsLog.Info($"Updating colorIndex for group '{rule.GroupName}' from {rule.ColorIndex} to {newColor}");
+                    rule.ColorIndex = newColor;
+                    updated = true;
+                }
+            }
+
+            if (updated)
+            {
+                SaveConfig(config);
+                // Force reload so caches update to new colorIndex values.
+                ReloadAndApplyConfig();
+            }
+        }
+
+        private static void SaveConfig(TabGroupConfig config)
+        {
+            try
+            {
+                string path = TabGroupConfigLoader.GetUserConfigPath();
+                var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig), new DataContractJsonSerializerSettings
+                {
+                    UseSimpleDictionaryFormat = true
+                });
+
+                using (var stream = new MemoryStream())
+                {
+                    using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, Encoding.UTF8, true, true, "  "))
+                    {
+                        serializer.WriteObject(writer, config);
+                        writer.Flush();
+                    }
+
+                    string json = Encoding.UTF8.GetString(stream.ToArray());
+                    json = json.Replace("\\/", "/");
+
+                    File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Group color save failed: {ex.Message}");
+            }
         }
 
         [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]
