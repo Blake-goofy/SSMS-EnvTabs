@@ -44,6 +44,7 @@ namespace SSMS_EnvTabs
         private readonly string suggestedName;
         private readonly bool hideAliasStep;
         private readonly bool hideGroupNameRow;
+        private readonly HashSet<int> usedColorIndexes;
 
         private class ColorItem
         {
@@ -84,6 +85,7 @@ namespace SSMS_EnvTabs
             public bool HideDatabaseRow { get; set; }
             public bool HideAliasStep { get; set; }
             public bool HideGroupNameRow { get; set; }
+            public IEnumerable<int> UsedColorIndexes { get; set; }
         }
 
         public NewRuleDialog(NewRuleDialogOptions options)
@@ -96,6 +98,7 @@ namespace SSMS_EnvTabs
             this.suggestedName = options.SuggestedName;
             this.hideAliasStep = options.HideAliasStep;
             this.hideGroupNameRow = options.HideGroupNameRow;
+            this.usedColorIndexes = new HashSet<int>(options.UsedColorIndexes ?? Enumerable.Empty<int>());
 
             InitializeComponent(options.Server, options.Database, options.SuggestedColorIndex, options.HideDatabaseRow);
             
@@ -167,8 +170,8 @@ namespace SSMS_EnvTabs
             boldFont = new Font(scaledFont, FontStyle.Bold);
 
             int yShift = hideDatabaseRow ? 32 : 0;
-            int nameRowShift = hideGroupNameRow ? 30 : 0;
-            this.Size = new Size(430, 270 - yShift);
+            int nameRowOffset = hideGroupNameRow ? 0 : 12;
+            this.Size = new Size(430, 270 - yShift + nameRowOffset);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.MaximizeBox = false;
@@ -215,7 +218,7 @@ namespace SSMS_EnvTabs
                 panelRule.Controls.Add(lblDatabaseValue);
             }
 
-            int nameRowOffset = hideGroupNameRow ? 0 : 30;
+            // Layout adjustment when the Group Name row is visible
 
             if (!hideGroupNameRow)
             {
@@ -226,12 +229,12 @@ namespace SSMS_EnvTabs
                 panelRule.Controls.Add(txtName);
             }
 
-            lblColor = new Label { Text = "Color:", Location = new Point(16, 132 - yShift - nameRowOffset), AutoSize = true };
+            lblColor = new Label { Text = "Color:", Location = new Point(16, 132 - yShift + nameRowOffset), AutoSize = true };
             panelRule.Controls.Add(lblColor);
 
             cmbColor = new ComboBox 
             { 
-                Location = new Point(130, 128 - yShift - nameRowOffset), 
+                Location = new Point(130, 128 - yShift + nameRowOffset), 
                 Size = new Size(270, 26),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DrawMode = DrawMode.OwnerDrawFixed,
@@ -257,7 +260,7 @@ namespace SSMS_EnvTabs
             cmbColor.DrawItem += CmbColor_DrawItem;
             cmbColor.DataSource = orderedList;
             
-            btnSave = new Button { Text = "Save", Location = new Point(90, 190 - yShift - nameRowOffset), Size = new Size(90, 30), DialogResult = DialogResult.OK };
+            btnSave = new Button { Text = "Save", Location = new Point(90, 190 - yShift + nameRowOffset), Size = new Size(90, 30), DialogResult = DialogResult.OK };
             btnSave.Click += (s, e) => {
                 if (txtName != null)
                 {
@@ -271,10 +274,10 @@ namespace SSMS_EnvTabs
             };
             panelRule.Controls.Add(btnSave);
 
-            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190 - yShift - nameRowOffset), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
+            btnCancel = new Button { Text = "Cancel", Location = new Point(190, 190 - yShift + nameRowOffset), Size = new Size(90, 30), DialogResult = DialogResult.Cancel };
             panelRule.Controls.Add(btnCancel);
 
-            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190 - yShift - nameRowOffset), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
+            btnOpenConfig = new Button { Text = "Open Config", Location = new Point(290, 190 - yShift + nameRowOffset), Size = new Size(110, 30), DialogResult = DialogResult.Yes };
             btnOpenConfig.Click += (s, e) => { 
                 RuleName = txtName != null ? txtName.Text : suggestedName; 
                 SelectedColorIndex = ((ColorItem)cmbColor.SelectedItem).Index; 
@@ -433,6 +436,7 @@ namespace SSMS_EnvTabs
             if (e.Index < 0) return;
 
             var item = (ColorItem)cmbColor.Items[e.Index];
+            string displayName = usedColorIndexes.Contains(item.Index) ? $"{item.Name} (used)" : item.Name;
 
             e.DrawBackground();
 
@@ -446,7 +450,7 @@ namespace SSMS_EnvTabs
             // Draw Text
             using (var brush = new SolidBrush(e.ForeColor))
             {
-                e.Graphics.DrawString(item.Name, e.Font, brush, e.Bounds.Left + 30, e.Bounds.Top + 1);
+                e.Graphics.DrawString(displayName, e.Font, brush, e.Bounds.Left + 30, e.Bounds.Top + 1);
             }
 
             e.DrawFocusRectangle();

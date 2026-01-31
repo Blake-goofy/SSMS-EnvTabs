@@ -118,6 +118,11 @@ namespace SSMS_EnvTabs
                     // We use newRule.ColorIndex because AddRuleAndSave might have adjusted it if we add more logic, 
                     // but currently it just uses what we passed.
                     
+                    var usedColorIndexes = new HashSet<int>(
+                        config.ConnectionGroups
+                            .Where(r => !ReferenceEquals(r, newRule))
+                            .Select(r => r.ColorIndex));
+
                     var dialogOptions = new NewRuleDialog.NewRuleDialogOptions
                     {
                         Server = server,
@@ -127,7 +132,8 @@ namespace SSMS_EnvTabs
                         ExistingAlias = enableAutoRename ? ((!useDb && string.IsNullOrEmpty(existingAlias)) ? server : existingAlias) : null,
                         HideDatabaseRow = !useDb,
                         HideAliasStep = !enableAutoRename,
-                        HideGroupNameRow = !enableAutoRename
+                        HideGroupNameRow = !enableAutoRename,
+                        UsedColorIndexes = usedColorIndexes
                     };
 
                     using (var dlg = new NewRuleDialog(dialogOptions))
@@ -139,10 +145,13 @@ namespace SSMS_EnvTabs
                         var result = dlg.ShowDialog();
                         EnvTabsLog.Info($"AutoConfig: Dialog result = {result}");
                         bool changesApplied = false;
+                        int resultingColorIndex = newRule.ColorIndex;
+
                         if (result == DialogResult.OK || result == DialogResult.Yes) 
                         {
                             string updatedName = string.IsNullOrWhiteSpace(dlg.RuleName) ? newRule.GroupName : dlg.RuleName;
                             int updatedColor = dlg.SelectedColorIndex;
+                            resultingColorIndex = updatedColor;
 
                             bool configChanged = false;
 
@@ -183,6 +192,23 @@ namespace SSMS_EnvTabs
                             if (result == DialogResult.Yes)
                             {
                                 OpenConfigInEditor();
+                            }
+                        }
+
+                        if (result == DialogResult.OK || result == DialogResult.Cancel)
+                        {
+                            if (IsColorUsedByOtherRule(config, newRule, resultingColorIndex))
+                            {
+                                var choice = MessageBox.Show(
+                                    "This color is already assigned to another connection group. Open the config to resolve?",
+                                    "SSMS EnvTabs",
+                                    MessageBoxButtons.YesNo,
+                                    MessageBoxIcon.Warning);
+
+                                if (choice == DialogResult.Yes)
+                                {
+                                    OpenConfigInEditor();
+                                }
                             }
                         }
 
@@ -244,6 +270,21 @@ namespace SSMS_EnvTabs
             // Save
             SaveConfig(config);
             return newRule;
+        }
+
+        private static bool IsColorUsedByOtherRule(TabGroupConfig config, TabGroupRule currentRule, int colorIndex)
+        {
+            if (config?.ConnectionGroups == null) return false;
+
+            foreach (var rule in config.ConnectionGroups)
+            {
+                if (!ReferenceEquals(rule, currentRule) && rule.ColorIndex == colorIndex)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void OpenConfigInEditor()
