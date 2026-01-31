@@ -7,6 +7,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace SSMS_EnvTabs
 {
@@ -574,23 +575,40 @@ namespace SSMS_EnvTabs
                 return;
             }
 
-            string dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+            const int maxAttempts = 6;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                Directory.CreateDirectory(dir);
-            }
+                try
+                {
+                    string dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
 
-            string tmp = path + ".tmp";
-            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::WriteIfChanged - Writing file '{path}'.");
-            File.WriteAllText(tmp, content ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    string tmp = path + ".tmp";
+                    EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::WriteIfChanged - Writing file '{path}' (attempt {attempt}/{maxAttempts}).");
+                    File.WriteAllText(tmp, content ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
-            if (File.Exists(path))
-            {
-                File.Replace(tmp, path, null, ignoreMetadataErrors: true);
-            }
-            else
-            {
-                File.Move(tmp, path);
+                    if (File.Exists(path))
+                    {
+                        File.Replace(tmp, path, null, ignoreMetadataErrors: true);
+                    }
+                    else
+                    {
+                        File.Move(tmp, path);
+                    }
+
+                    return;
+                }
+                catch (IOException) when (attempt < maxAttempts)
+                {
+                    Thread.Sleep(150 * attempt);
+                }
+                catch (UnauthorizedAccessException) when (attempt < maxAttempts)
+                {
+                    Thread.Sleep(150 * attempt);
+                }
             }
         }
 

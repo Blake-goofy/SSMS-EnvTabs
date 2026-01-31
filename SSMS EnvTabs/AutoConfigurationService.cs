@@ -59,6 +59,8 @@ namespace SSMS_EnvTabs
             }
 
             bool enableAutoRename = config.Settings.EnableAutoRename != false;
+            bool enableAliasPrompt = config.Settings.EnableServerAliasPrompt != false;
+            bool enableColorWarning = config.Settings.EnableColorWarning != false;
 
             // Prepare suggested values
             int nextColor = FindNextColorValues(config);
@@ -74,6 +76,13 @@ namespace SSMS_EnvTabs
             if (enableAutoRename && config.ServerAliases.TryGetValue(server, out string alias))
             {
                 existingAlias = alias;
+            }
+
+            // If alias prompt is enabled, treat "alias == server" as no alias so the prompt can show.
+            if (enableAliasPrompt && !string.IsNullOrWhiteSpace(existingAlias)
+                && string.Equals(existingAlias, server, StringComparison.OrdinalIgnoreCase))
+            {
+                existingAlias = null;
             }
 
               if (useDb && !string.IsNullOrWhiteSpace(database))
@@ -129,9 +138,9 @@ namespace SSMS_EnvTabs
                         Database = !useDb ? null : database,
                         SuggestedName = suggestedName,
                         SuggestedColorIndex = nextColor,
-                        ExistingAlias = enableAutoRename ? ((!useDb && string.IsNullOrEmpty(existingAlias)) ? server : existingAlias) : null,
+                        ExistingAlias = enableAutoRename ? existingAlias : null,
                         HideDatabaseRow = !useDb,
-                        HideAliasStep = !enableAutoRename,
+                        HideAliasStep = !enableAutoRename || !enableAliasPrompt,
                         HideGroupNameRow = !enableAutoRename,
                         UsedColorIndexes = usedColorIndexes
                     };
@@ -158,7 +167,7 @@ namespace SSMS_EnvTabs
                             if (enableAutoRename)
                             {
                                 // Update Alias if new
-                                if (!string.IsNullOrWhiteSpace(dlg.ServerAlias) && 
+                                if (enableAliasPrompt && !string.IsNullOrWhiteSpace(dlg.ServerAlias) && 
                                     (!string.Equals(dlg.ServerAlias, existingAlias, StringComparison.Ordinal)))
                                 {
                                     config.ServerAliases[server] = dlg.ServerAlias;
@@ -195,7 +204,7 @@ namespace SSMS_EnvTabs
                             }
                         }
 
-                        if (result == DialogResult.OK || result == DialogResult.Cancel)
+                        if (enableColorWarning && (result == DialogResult.OK || result == DialogResult.Cancel))
                         {
                             if (IsColorUsedByOtherRule(config, newRule, resultingColorIndex))
                             {

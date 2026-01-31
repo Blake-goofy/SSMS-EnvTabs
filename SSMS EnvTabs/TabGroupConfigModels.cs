@@ -63,10 +63,16 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "enableConnectionPolling", IsRequired = false, Order = 4)]
         public bool EnableConnectionPolling { get; set; } = true;
 
-        [DataMember(Name = "autoConfigure", IsRequired = false, Order = 5)]
+        [DataMember(Name = "enableColorWarning", IsRequired = false, Order = 5)]
+        public bool EnableColorWarning { get; set; } = true;
+
+        [DataMember(Name = "enableServerAliasPrompt", IsRequired = false, Order = 6)]
+        public bool EnableServerAliasPrompt { get; set; } = true;
+
+        [DataMember(Name = "autoConfigure", IsRequired = false, Order = 7)]
         public string AutoConfigure { get; set; }
 
-        [DataMember(Name = "newQueryRenameStyle", IsRequired = false, Order = 6)]
+        [DataMember(Name = "newQueryRenameStyle", IsRequired = false, Order = 8)]
         public string NewQueryRenameStyle { get; set; }
     }
 

@@ -7,6 +7,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace SSMS_EnvTabs
 {
@@ -184,6 +185,8 @@ namespace SSMS_EnvTabs
             }
 
             bool updated = false;
+            bool enableColorWarning = config.Settings?.EnableColorWarning != false;
+
             foreach (var rule in config.ConnectionGroups)
             {
                 if (rule == null || string.IsNullOrWhiteSpace(rule.GroupName))
@@ -195,6 +198,20 @@ namespace SSMS_EnvTabs
                     && overrideByBaseRegex.TryGetValue(baseRegex, out int newColor)
                     && rule.ColorIndex != newColor)
                 {
+                    if (enableColorWarning && IsColorUsedByOtherRule(config, rule, newColor))
+                    {
+                        var choice = MessageBox.Show(
+                            "This color is already assigned to another connection group. Open the config to resolve?",
+                            "SSMS EnvTabs",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning);
+
+                        if (choice == DialogResult.Yes)
+                        {
+                            OpenConfigInEditor();
+                        }
+                    }
+
                     EnvTabsLog.Info($"Updating colorIndex for group '{rule.GroupName}' from {rule.ColorIndex} to {newColor}");
                     rule.ColorIndex = newColor;
                     updated = true;
@@ -204,9 +221,30 @@ namespace SSMS_EnvTabs
             if (updated)
             {
                 SaveConfig(config);
-                // Force reload so caches update to new colorIndex values.
-                ReloadAndApplyConfig();
+                EnvTabsLog.Info("Group color overrides saved. Awaiting config watcher reload.");
             }
+        }
+
+        private static bool IsColorUsedByOtherRule(TabGroupConfig config, TabGroupRule currentRule, int colorIndex)
+        {
+            if (config?.ConnectionGroups == null) return false;
+
+            foreach (var rule in config.ConnectionGroups)
+            {
+                if (!ReferenceEquals(rule, currentRule) && rule?.ColorIndex == colorIndex)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void OpenConfigInEditor()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            string path = TabGroupConfigLoader.GetUserConfigPath();
+            VsShellUtilities.OpenDocument(ServiceProvider.GlobalProvider, path);
         }
 
         private static void SaveConfig(TabGroupConfig config)
