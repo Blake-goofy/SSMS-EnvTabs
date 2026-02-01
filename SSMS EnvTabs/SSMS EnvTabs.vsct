@@ -17,6 +17,12 @@
           <ButtonText>EnvTabs: Configure Rules...</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidCheckUpdates" priority="0x0110" type="Button">
+        <Parent guid="guidSSMS_EnvTabsCmdSet" id="MyMenuGroup" />
+        <Strings>
+          <ButtonText>EnvTabs: Check for Updates</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -25,6 +31,7 @@
     <GuidSymbol name="guidSSMS_EnvTabsCmdSet" value="{2E302824-2C62-4275-801B-55919612C26D}">
       <IDSymbol name="MyMenuGroup" value="0x1020" />
       <IDSymbol name="cmdidOpenConfig" value="0x0103" />
+      <IDSymbol name="cmdidCheckUpdates" value="0x0104" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>

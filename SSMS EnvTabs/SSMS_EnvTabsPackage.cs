@@ -26,6 +26,7 @@ namespace SSMS_EnvTabs
         public const int cmdidGenerateSalt = 0x0101;
         public const int cmdidCaptureData = 0x0102;
         public const int cmdidOpenConfig = 0x0103;
+        public const int cmdidCheckUpdates = 0x0104;
 
         private RdtEventManager rdtEventManager;
 
@@ -48,6 +49,9 @@ namespace SSMS_EnvTabs
             
             // Register commands
             await OpenConfigCommand.InitializeAsync(this);
+            await CheckUpdatesCommand.InitializeAsync(this);
+
+            UpdateChecker.ScheduleCheck(this, initialConfig?.Settings);
         }
 
     }

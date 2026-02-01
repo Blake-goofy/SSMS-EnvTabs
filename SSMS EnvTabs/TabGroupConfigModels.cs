@@ -69,10 +69,13 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "enableServerAliasPrompt", IsRequired = false, Order = 6)]
         public bool EnableServerAliasPrompt { get; set; } = true;
 
-        [DataMember(Name = "autoConfigure", IsRequired = false, Order = 7)]
+        [DataMember(Name = "enableUpdateChecks", IsRequired = false, Order = 7)]
+        public bool EnableUpdateChecks { get; set; } = true;
+
+        [DataMember(Name = "autoConfigure", IsRequired = false, Order = 8)]
         public string AutoConfigure { get; set; }
 
-        [DataMember(Name = "newQueryRenameStyle", IsRequired = false, Order = 8)]
+        [DataMember(Name = "newQueryRenameStyle", IsRequired = false, Order = 9)]
         public string NewQueryRenameStyle { get; set; }
     }
 

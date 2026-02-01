@@ -41,6 +41,7 @@ You can also change a tab color directly in SSMS. Right-click the query tab, cho
     "enableAutoColor": true,
     "enableConfigurePrompt": true,
     "enableConnectionPolling": true,
+    "enableUpdateChecks": true,
     "autoConfigure": "server db",
     "newQueryRenameStyle": "[#]. [groupName]"
   },
@@ -64,6 +65,7 @@ You can also change a tab color directly in SSMS. Right-click the query tab, cho
 Full documentation is available in the [GitHub Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
 - **[Installation](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Installation-Guide)**: Setup and requirements.
+- **[Updating](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Updating)**: How updates work and how to check manually.
 - **[Configuration](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)**: Global settings and prompts.
 - **[Group Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Group-Rules)**: Creating rules for your servers.
 - **[Manual Regex Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Manual-Regex)**: Advanced regex matching overrides.
