@@ -145,7 +145,7 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static Version GetCurrentVersion()
+        internal static Version GetCurrentVersion()
         {
             try
             {
@@ -443,7 +443,7 @@ namespace SSMS_EnvTabs
             return null;
         }
 
-        private static string FormatVersion(Version version)
+        internal static string FormatVersion(Version version)
         {
             if (version == null)
             {

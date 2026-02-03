@@ -109,5 +109,58 @@ namespace SSMS_EnvTabs
                 return null;
             }
         }
+
+        internal static void UpdateConfigVersionIfNeeded(TabGroupConfig config, Version currentVersion)
+        {
+            if (config == null || currentVersion == null)
+            {
+                return;
+            }
+
+            string desiredVersion = UpdateChecker.FormatVersion(currentVersion);
+            if (string.Equals(config.Version, desiredVersion, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            config.Version = desiredVersion;
+            SaveConfig(config);
+            EnvTabsLog.Info($"Config version updated to {desiredVersion}.");
+        }
+
+        internal static void SaveConfig(TabGroupConfig config)
+        {
+            try
+            {
+                if (config == null)
+                {
+                    return;
+                }
+
+                string path = GetUserConfigPath();
+                var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig), new DataContractJsonSerializerSettings
+                {
+                    UseSimpleDictionaryFormat = true
+                });
+
+                using (var stream = new MemoryStream())
+                {
+                    using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, Encoding.UTF8, true, true, "  "))
+                    {
+                        serializer.WriteObject(writer, config);
+                        writer.Flush();
+                    }
+
+                    string json = Encoding.UTF8.GetString(stream.ToArray());
+                    json = json.Replace("\\/", "/");
+
+                    File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Config save failed: {ex.Message}");
+            }
+        }
     }
 }

@@ -249,32 +249,7 @@ namespace SSMS_EnvTabs
 
         private static void SaveConfig(TabGroupConfig config)
         {
-            try
-            {
-                string path = TabGroupConfigLoader.GetUserConfigPath();
-                var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig), new DataContractJsonSerializerSettings
-                {
-                    UseSimpleDictionaryFormat = true
-                });
-
-                using (var stream = new MemoryStream())
-                {
-                    using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, Encoding.UTF8, true, true, "  "))
-                    {
-                        serializer.WriteObject(writer, config);
-                        writer.Flush();
-                    }
-
-                    string json = Encoding.UTF8.GetString(stream.ToArray());
-                    json = json.Replace("\\/", "/");
-
-                    File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-                }
-            }
-            catch (Exception ex)
-            {
-                EnvTabsLog.Info($"Group color save failed: {ex.Message}");
-            }
+            TabGroupConfigLoader.SaveConfig(config);
         }
 
         [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]

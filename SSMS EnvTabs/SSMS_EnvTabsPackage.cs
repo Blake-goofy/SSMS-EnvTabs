@@ -38,6 +38,7 @@ namespace SSMS_EnvTabs
 
             TabGroupConfigLoader.EnsureDefaultConfigExists();
             var initialConfig = TabGroupConfigLoader.LoadOrNull();
+            TabGroupConfigLoader.UpdateConfigVersionIfNeeded(initialConfig, UpdateChecker.GetCurrentVersion());
             if (initialConfig?.Settings != null)
             {
                 EnvTabsLog.Enabled = initialConfig.Settings.EnableLogging;
