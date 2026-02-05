@@ -301,6 +301,8 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
             EnvTabsLog.Info("Configuration changed, reloading...");
 
+            var previousAliasSnapshot = CloneAliasSnapshot(lastAliasSnapshot);
+
             // Invalidate cache
             cachedConfig = null;
             // Clear suppressed "do not ask again" connections so that if user removed a rule, we effectively reset the "ignore" state
@@ -308,6 +310,14 @@ namespace SSMS_EnvTabs
             AutoConfigurationService.ClearSuppressed();
 
             var config = LoadConfigOrNull();
+            if (TryApplyAliasGroupNameUpdates(previousAliasSnapshot, config))
+            {
+                cachedRules = TabRuleMatcher.CompileRules(config);
+                cachedManualRules = TabRuleMatcher.CompileManualRules(config);
+            }
+
+            lastAliasSnapshot = CloneAliasSnapshot(config?.ServerAliases);
+
             var rules = cachedRules; // LoadConfigOrNull updates cachedRules
             var manualRules = cachedManualRules;
 
@@ -366,6 +376,135 @@ namespace SSMS_EnvTabs
             }
         }
 
+        private bool TryApplyAliasGroupNameUpdates(TabGroupConfig previousConfig, TabGroupConfig currentConfig)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            return TryApplyAliasGroupNameUpdates(previousConfig?.ServerAliases, currentConfig);
+        }
+
+        private bool TryApplyAliasGroupNameUpdates(System.Collections.Generic.Dictionary<string, string> previousAliases, TabGroupConfig currentConfig)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (previousAliases == null || previousAliases.Count == 0 || currentConfig?.ServerAliases == null)
+            {
+                EnvTabsLog.Info("Alias update check skipped: missing previous or current serverAlias map.");
+                return false;
+            }
+
+            if (currentConfig.ConnectionGroups == null || currentConfig.ConnectionGroups.Count == 0)
+            {
+                EnvTabsLog.Info("Alias update check skipped: no connectionGroups found.");
+                return false;
+            }
+
+            bool updated = false;
+            int aliasChanges = 0;
+            int aliasMatchedRules = 0;
+            int aliasUpdatedRules = 0;
+
+            foreach (var kvp in currentConfig.ServerAliases)
+            {
+                string server = kvp.Key;
+                string newAlias = kvp.Value;
+
+                if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(newAlias))
+                {
+                    continue;
+                }
+
+                if (!previousAliases.TryGetValue(server, out string oldAlias))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(oldAlias))
+                {
+                    continue;
+                }
+
+                if (string.Equals(oldAlias, newAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                aliasChanges++;
+
+                foreach (var rule in currentConfig.ConnectionGroups)
+                {
+                    if (rule == null)
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(rule.Server, server, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(rule.Database) || string.IsNullOrWhiteSpace(rule.GroupName))
+                    {
+                        continue;
+                    }
+
+                    string database = NormalizeWhitespace(rule.Database);
+                    string expectedGroup = NormalizeWhitespace($"{oldAlias} {database}");
+                    string currentGroup = NormalizeWhitespace(rule.GroupName);
+
+                    if (!string.Equals(currentGroup, expectedGroup, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    aliasMatchedRules++;
+
+                    string updatedGroup = NormalizeWhitespace($"{newAlias} {database}");
+                    EnvTabsLog.Info($"Updating group name for server '{server}' from '{rule.GroupName}' to '{updatedGroup}' due to alias change.");
+                    rule.GroupName = updatedGroup;
+                    aliasUpdatedRules++;
+                    updated = true;
+                }
+            }
+
+            if (aliasChanges == 0)
+            {
+                EnvTabsLog.Info("Alias update check: no alias changes detected.");
+            }
+            else
+            {
+                EnvTabsLog.Info($"Alias update check: aliasChanges={aliasChanges}, matchedRules={aliasMatchedRules}, updatedRules={aliasUpdatedRules}.");
+            }
+
+            if (updated)
+            {
+                SaveConfig(currentConfig);
+                EnvTabsLog.Info("Alias-driven group name updates saved. Awaiting config watcher reload.");
+            }
+
+            return updated;
+        }
+
+        private static string NormalizeWhitespace(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return System.Text.RegularExpressions.Regex.Replace(value, @"\s+", " ").Trim();
+        }
+
+        private static System.Collections.Generic.Dictionary<string, string> CloneAliasSnapshot(System.Collections.Generic.Dictionary<string, string> source)
+        {
+            if (source == null || source.Count == 0)
+            {
+                return new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+            }
+
+            return new System.Collections.Generic.Dictionary<string, string>(source, System.StringComparer.OrdinalIgnoreCase);
+        }
+
         private TabGroupConfig LoadConfigOrNull()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -405,6 +544,10 @@ namespace SSMS_EnvTabs
                 cachedConfigLastWriteUtc = lastWriteUtc;
                 cachedRules = TabRuleMatcher.CompileRules(loaded);
                 cachedManualRules = TabRuleMatcher.CompileManualRules(loaded);
+                if (lastAliasSnapshot == null || lastAliasSnapshot.Count == 0)
+                {
+                    lastAliasSnapshot = CloneAliasSnapshot(loaded?.ServerAliases);
+                }
                 EnvTabsLog.Info($"RdtEventManager.Config.cs::LoadConfigOrNull - Loaded. Rules={cachedRules?.Count ?? 0}, ManualRules={cachedManualRules?.Count ?? 0}, AutoColor={loaded?.Settings?.EnableAutoColor}, AutoRename={loaded?.Settings?.EnableAutoRename}, Polling={loaded?.Settings?.EnableConnectionPolling}");
                 return loaded;
             }

@@ -45,6 +45,8 @@ namespace SSMS_EnvTabs
         private List<TabRuleMatcher.CompiledRule> cachedRules;
         private List<TabRuleMatcher.CompiledManualRule> cachedManualRules;
 
+        private Dictionary<string, string> lastAliasSnapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         private DateTime suppressColorUpdatesUntilUtc;
 
 

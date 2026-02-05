@@ -198,7 +198,8 @@ namespace SSMS_EnvTabs
                 using (var dialog = new UpdatePromptDialog(
                     latestDisplay,
                     currentDisplay,
-                    () => OpenUrl(release?.HtmlUrl)))
+                    () => OpenUrl(release?.HtmlUrl),
+                    () => OpenConfig(package)))
                 {
                     var result = dialog.ShowDialog();
                     if (result == System.Windows.Forms.DialogResult.Yes)
@@ -229,6 +230,22 @@ namespace SSMS_EnvTabs
             catch (Exception ex)
             {
                 EnvTabsLog.Info($"Up-to-date prompt failed: {ex.Message}");
+            }
+        }
+
+        private static void OpenConfig(AsyncPackage package)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            try
+            {
+                TabGroupConfigLoader.EnsureDefaultConfigExists();
+                string configPath = TabGroupConfigLoader.GetUserConfigPath();
+                VsShellUtilities.OpenDocument(package, configPath);
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"OpenConfig from update prompt failed: {ex.Message}");
             }
         }
 
