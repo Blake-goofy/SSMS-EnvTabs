@@ -704,7 +704,12 @@ namespace SSMS_EnvTabs
                     string candidate = Path.Combine(guidRoot, "ColorByRegexConfig.txt");
                     if (File.Exists(candidate))
                     {
-                        return candidate;
+                        if (HasSiblingVFolder(candidate))
+                        {
+                            return candidate;
+                        }
+
+                        EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryGetConfigPathFromMoniker - Skipping temp candidate (missing v# folder): '{candidate}'");
                     }
                 }
 
@@ -776,7 +781,12 @@ namespace SSMS_EnvTabs
                         EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - FirstDocSeenUtc={referenceUtc:O}, RegexFolderCreateUtc={dirCreateUtc:O}, DeltaSeconds={deltaSeconds:0.###}, FileExists={fileExists}, Folder='{entry.Dir}'");
                         if (fileExists)
                         {
-                            return candidate;
+                            if (HasSiblingVFolder(candidate))
+                            {
+                                return candidate;
+                            }
+
+                            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - Skipping candidate (missing v# folder): '{candidate}'");
                         }
                     }
                     catch
@@ -877,6 +887,61 @@ namespace SSMS_EnvTabs
             }
 
             return Guid.TryParse(name, out _);
+        }
+
+        private static bool HasSiblingVFolder(string configPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(configPath))
+                {
+                    return false;
+                }
+
+                string dir = Path.GetDirectoryName(configPath);
+                if (string.IsNullOrWhiteSpace(dir))
+                {
+                    return false;
+                }
+
+                foreach (var subDir in Directory.GetDirectories(dir))
+                {
+                    string name = Path.GetFileName(subDir);
+                    if (IsVersionFolderName(name))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsVersionFolderName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            if (name.Length < 2 || name[0] != 'v')
+            {
+                return false;
+            }
+
+            for (int i = 1; i < name.Length; i++)
+            {
+                if (!char.IsDigit(name[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }
