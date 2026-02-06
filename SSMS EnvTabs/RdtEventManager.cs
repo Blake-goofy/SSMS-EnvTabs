@@ -222,7 +222,8 @@ namespace SSMS_EnvTabs
                 // Or if it reverted to "SQLQuery1.sql".
                 bool forceCheck = reason != null && (
                     reason.StartsWith("AttributeChange", StringComparison.OrdinalIgnoreCase) ||
-                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0
+                    reason.IndexOf("AttributeChange", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    reason.IndexOf("AfterSave", StringComparison.OrdinalIgnoreCase) >= 0
                 );
 
                 if (TryGetConnectionInfo(frame, out string server, out string database))
@@ -250,7 +251,8 @@ namespace SSMS_EnvTabs
                                 Moniker = moniker
                             };
                             string style = config.Settings?.NewQueryRenameStyle;
-                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { ctx }, rules, manualRules, style);
+                            string savedStyle = config.Settings?.SavedFileRenameStyle;
+                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { ctx }, rules, manualRules, style, savedStyle);
 
                             if (renamedCount > 0)
                             {

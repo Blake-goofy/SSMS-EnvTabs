@@ -15,11 +15,11 @@ namespace SSMS_EnvTabs
     {
         private const string BeginMarker = "// SSMS EnvTabs: BEGIN generated";
         private const string EndMarker = "// SSMS EnvTabs: END generated";
-        private const int ResolveRetryMax = 6;
+        private const int ResolveRetryMax = 12;
         private const int ResolveRetryDelayMs = 500;
         private const int TempScanBackoffMs = 3000;
-        private const double CreationSkewSeconds = 2.0;
-        private const double CreationMaxWindowSeconds = 30.0;
+        private const double CreationSkewSeconds = 60.0;
+        private const double CreationMaxWindowSeconds = 60.0;
 
         private string resolvedConfigPath;
         private DateTime? firstDocSeenUtc;

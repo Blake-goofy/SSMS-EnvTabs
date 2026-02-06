@@ -64,6 +64,7 @@ namespace SSMS_EnvTabs
         private readonly string databaseName;
         private readonly string existingAlias;
         private readonly string suggestedName;
+        private readonly string suggestedGroupNameStyle;
         private readonly bool hideAliasStep;
         private readonly bool hideGroupNameRow;
         private readonly HashSet<int> usedColorIndexes;
@@ -102,6 +103,7 @@ namespace SSMS_EnvTabs
             public string Server { get; set; }
             public string Database { get; set; }
             public string SuggestedName { get; set; }
+            public string SuggestedGroupNameStyle { get; set; }
             public int SuggestedColorIndex { get; set; }
             public string ExistingAlias { get; set; }
             public bool HideDatabaseRow { get; set; }
@@ -118,6 +120,7 @@ namespace SSMS_EnvTabs
             this.databaseName = options.Database;
             this.existingAlias = options.ExistingAlias;
             this.suggestedName = options.SuggestedName;
+            this.suggestedGroupNameStyle = options.SuggestedGroupNameStyle;
             this.hideAliasStep = options.HideAliasStep;
             this.hideGroupNameRow = options.HideGroupNameRow;
             this.usedColorIndexes = new HashSet<int>(options.UsedColorIndexes ?? Enumerable.Empty<int>());
@@ -181,13 +184,21 @@ namespace SSMS_EnvTabs
             panelAlias.Visible = false;
             panelRule.Visible = true;
             
-            // Update Rule Name based on Alias if present
-            if (!hideGroupNameRow && txtName != null && !string.IsNullOrWhiteSpace(ServerAlias))
+            if (!hideGroupNameRow && txtName != null)
             {
-                if (string.IsNullOrWhiteSpace(databaseName))
-                    txtName.Text = ServerAlias;
-                else
-                    txtName.Text = $"{ServerAlias} {databaseName}";
+                string expectedWithServer = BuildSuggestedGroupName(serverName, databaseName);
+                string expectedWithExistingAlias = BuildSuggestedGroupName(string.IsNullOrWhiteSpace(existingAlias) ? serverName : existingAlias, databaseName);
+                string expectedWithAlias = BuildSuggestedGroupName(string.IsNullOrWhiteSpace(ServerAlias) ? serverName : ServerAlias, databaseName);
+
+                bool matchesSuggested = string.IsNullOrWhiteSpace(txtName.Text)
+                    || string.Equals(txtName.Text, expectedWithServer, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(txtName.Text, expectedWithExistingAlias, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(txtName.Text, suggestedName, StringComparison.OrdinalIgnoreCase);
+
+                if (matchesSuggested)
+                {
+                    txtName.Text = expectedWithAlias;
+                }
             }
 
             this.AcceptButton = btnSave;
@@ -201,6 +212,26 @@ namespace SSMS_EnvTabs
                 cmbColor?.Select();
             }
             ShowKeyboardCuesAlways();
+        }
+
+        private string BuildSuggestedGroupName(string serverValue, string databaseValue)
+        {
+            string serverPart = serverValue ?? string.Empty;
+            string dbPart = databaseValue ?? string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(suggestedGroupNameStyle))
+            {
+                return suggestedGroupNameStyle
+                    .Replace("[server]", serverPart)
+                    .Replace("[db]", dbPart);
+            }
+
+            if (string.IsNullOrWhiteSpace(dbPart))
+            {
+                return serverPart;
+            }
+
+            return $"{serverPart} {dbPart}";
         }
 
         private void InitializeComponent(string server, string database, int suggestedColorIndex, bool hideDatabaseRow)

@@ -85,20 +85,31 @@ namespace SSMS_EnvTabs
                 existingAlias = null;
             }
 
-              if (useDb && !string.IsNullOrWhiteSpace(database))
+            string style = config.Settings.SuggestedGroupNameStyle;
+            if (string.IsNullOrWhiteSpace(style))
             {
-                 // If alias exists, use it. e.g. "SCALE20 ILS"
-                 string prefix = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
-                 suggestedName = $"{prefix} {database}";
+                // Fallback to legacy logic
+                if (useDb && !string.IsNullOrWhiteSpace(database))
+                {
+                    string prefix = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+                    suggestedName = $"{prefix} {database}";
+                }
+                else
+                {
+                    suggestedName = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+                }
             }
             else
             {
-                 suggestedName = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+                // Use configured style
+                string serverPart = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+                string dbPart = (useDb && !string.IsNullOrWhiteSpace(database)) ? database : "";
+                
+                suggestedName = style
+                    .Replace("[server]", serverPart)
+                    .Replace("[db]", dbPart);
             }
             
-            // Clean up name slightly (remove double spaces if any)
-            suggestedName = System.Text.RegularExpressions.Regex.Replace(suggestedName, @"\s+", " ").Trim();
-
             EnvTabsLog.Info($"AutoConfig: Proposing new rule for {connectionKey}. Color={nextColor}, Name={suggestedName}, Prompt={config.Settings.EnableConfigurePrompt}");
             
             // Step 1: ALWAYS Create and Save the rule immediately
@@ -137,6 +148,7 @@ namespace SSMS_EnvTabs
                         Server = server,
                         Database = !useDb ? null : database,
                         SuggestedName = suggestedName,
+                        SuggestedGroupNameStyle = config.Settings?.SuggestedGroupNameStyle,
                         SuggestedColorIndex = nextColor,
                         ExistingAlias = enableAutoRename ? existingAlias : null,
                         HideDatabaseRow = !useDb,

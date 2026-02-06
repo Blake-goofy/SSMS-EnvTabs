@@ -77,6 +77,12 @@ namespace SSMS_EnvTabs
 
         [DataMember(Name = "newQueryRenameStyle", IsRequired = false, Order = 9)]
         public string NewQueryRenameStyle { get; set; }
+
+        [DataMember(Name = "suggestedGroupNameStyle", IsRequired = false, Order = 10)]
+        public string SuggestedGroupNameStyle { get; set; }
+
+        [DataMember(Name = "savedFileRenameStyle", IsRequired = false, Order = 11)]
+        public string SavedFileRenameStyle { get; set; }
     }
 
     [DataContract]

@@ -110,6 +110,7 @@ namespace SSMS_EnvTabs
                 EnvTabsLog.Info("Regex Preview:\n" + block);
             }
         }
+        [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; OnConfigChanged marshals as needed.")]
         private void OnConfigRenamed(object sender, RenamedEventArgs e)
         {
             OnConfigChanged(sender, e);
@@ -346,7 +347,12 @@ namespace SSMS_EnvTabs
 
                     if (renameCandidates.Count > 0)
                     {
-                        renamedCount = TabRenamer.ApplyRenamesOrThrow(renameCandidates, rules, manualRules, config.Settings?.NewQueryRenameStyle);
+                        renamedCount = TabRenamer.ApplyRenamesOrThrow(
+                            renameCandidates,
+                            rules,
+                            manualRules,
+                            config.Settings?.NewQueryRenameStyle,
+                            config.Settings?.SavedFileRenameStyle);
                     }
                 }
                 catch (Exception ex)
@@ -404,6 +410,8 @@ namespace SSMS_EnvTabs
             int aliasMatchedRules = 0;
             int aliasUpdatedRules = 0;
 
+            string suggestedStyle = currentConfig.Settings?.SuggestedGroupNameStyle;
+
             foreach (var kvp in currentConfig.ServerAliases)
             {
                 string server = kvp.Key;
@@ -448,18 +456,16 @@ namespace SSMS_EnvTabs
                         continue;
                     }
 
-                    string database = NormalizeWhitespace(rule.Database);
-                    string expectedGroup = NormalizeWhitespace($"{oldAlias} {database}");
-                    string currentGroup = NormalizeWhitespace(rule.GroupName);
-
-                    if (!string.Equals(currentGroup, expectedGroup, StringComparison.OrdinalIgnoreCase))
+                    string database = rule.Database;
+                    string expectedGroup = BuildSuggestedGroupNameFromStyle(suggestedStyle, oldAlias, database);
+                    if (!string.Equals(rule.GroupName, expectedGroup, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
 
                     aliasMatchedRules++;
 
-                    string updatedGroup = NormalizeWhitespace($"{newAlias} {database}");
+                    string updatedGroup = BuildSuggestedGroupNameFromStyle(suggestedStyle, newAlias, database);
                     EnvTabsLog.Info($"Updating group name for server '{server}' from '{rule.GroupName}' to '{updatedGroup}' due to alias change.");
                     rule.GroupName = updatedGroup;
                     aliasUpdatedRules++;
@@ -485,14 +491,24 @@ namespace SSMS_EnvTabs
             return updated;
         }
 
-        private static string NormalizeWhitespace(string value)
+        private static string BuildSuggestedGroupNameFromStyle(string style, string serverValue, string databaseValue)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            string serverPart = serverValue ?? string.Empty;
+            string dbPart = databaseValue ?? string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(style))
             {
-                return string.Empty;
+                return style
+                    .Replace("[server]", serverPart)
+                    .Replace("[db]", dbPart);
             }
 
-            return System.Text.RegularExpressions.Regex.Replace(value, @"\s+", " ").Trim();
+            if (string.IsNullOrWhiteSpace(dbPart))
+            {
+                return serverPart;
+            }
+
+            return $"{serverPart} {dbPart}";
         }
 
         private static System.Collections.Generic.Dictionary<string, string> CloneAliasSnapshot(System.Collections.Generic.Dictionary<string, string> source)

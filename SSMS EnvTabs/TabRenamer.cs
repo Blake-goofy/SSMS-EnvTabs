@@ -27,7 +27,7 @@ namespace SSMS_EnvTabs
             CookieToAssignment.Remove(cookie);
         }
 
-        public static int ApplyRenamesOrThrow(IEnumerable<TabRenameContext> tabs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules, string renameStyle = null)
+        public static int ApplyRenamesOrThrow(IEnumerable<TabRenameContext> tabs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules, string renameStyle = null, string savedFileRenameStyle = null)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             if (rules == null) throw new ArgumentNullException(nameof(rules));
@@ -36,6 +36,13 @@ namespace SSMS_EnvTabs
             if (string.IsNullOrWhiteSpace(renameStyle))
             {
                 renameStyle = "[groupName][#]";
+            }
+
+            // Default saved file style if null (fallback to legacy behavior)
+            string effectiveSavedStyle = savedFileRenameStyle;
+            if (string.IsNullOrWhiteSpace(effectiveSavedStyle))
+            {
+                effectiveSavedStyle = "[filename] [groupName]";
             }
 
             var nextIndexByGroup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -94,10 +101,17 @@ namespace SSMS_EnvTabs
                 }
                 else
                 {
-                    // Case 2: Saved File -> "FileName GroupName"
-                    // Removed .sql extension if present
+                    // Case 2: Saved File -> Use Saved File Configured Style
+                    // Replace [filename], [groupName], [server], [db]
                     string fileName = System.IO.Path.GetFileNameWithoutExtension(tab.Moniker);
-                    newCaption = $"{fileName} {assignment.GroupName}";
+                    string server = tab.Server ?? "";
+                    string database = tab.Database ?? "";
+
+                    newCaption = effectiveSavedStyle
+                        .Replace("[filename]", fileName)
+                        .Replace("[groupName]", assignment.GroupName)
+                        .Replace("[server]", server)
+                        .Replace("[db]", database);
                 }
                 
                 // Only skip if currently matches exact target

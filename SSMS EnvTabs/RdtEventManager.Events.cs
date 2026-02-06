@@ -111,6 +111,19 @@ namespace SSMS_EnvTabs
         public int OnAfterSave(uint docCookie)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            string moniker = TryGetMonikerFromCookie(docCookie);
+            if (IsSqlDocumentMoniker(moniker))
+            {
+                IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
+                if (frame != null)
+                {
+                    bool done = HandlePotentialChange(docCookie, frame, reason: "AfterSave");
+                    if (!done)
+                    {
+                        ScheduleRenameRetry(docCookie, "AfterSave");
+                    }
+                }
+            }
             UpdateColorOnly("AfterSave");
             return VSConstants.S_OK;
         }
