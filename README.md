@@ -43,7 +43,10 @@ You can also change a tab color directly in SSMS. Right-click the query tab, cho
     "enableConnectionPolling": true,
     "enableUpdateChecks": true,
     "autoConfigure": "server db",
-    "newQueryRenameStyle": "[#]. [groupName]"
+    "suggestedGroupNameStyle": "[server] [db]",
+    "newQueryRenameStyle": "[#]. [groupName]",
+    "savedFileRenameStyle": "[filename]"
+
   },
   "serverAlias": {
     "MY-LONG-SERVER-NAME": "AppServer"
