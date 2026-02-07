@@ -70,6 +70,9 @@ Full documentation is available in the [GitHub Wiki](https://github.com/Blake-go
 - **[Group Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Group-Rules)**: Creating rules for your servers.
 - **[Manual Regex Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Manual-Regex)**: Advanced regex matching overrides.
 - **[Tab Text Settings](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Text-Settings)**: How to clean up tab text.
+- **[Tab Appearance](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Appearance)**: Customizing tab naming for new vs saved queries.
+- **[Configuration Prompts](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Prompts)**: Prompts and warnings you may see.
+- **[Tools Menu and Buttons](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tools-Menu-Buttons)**: Show or hide the EnvTabs menu group and buttons.
 - **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)**: List of available colors (0-15).
 - **[Wildcard Patterns](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Wildcard-Patterns)**: Matching syntax.
 - **[How it Works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)**: Technical details.
