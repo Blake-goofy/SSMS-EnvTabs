@@ -1,405 +1,421 @@
 using System;
-using System.Drawing;
-using System.Windows.Forms;
-using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Interop;
+using System.Reflection;
+using Microsoft.VisualStudio.PlatformUI;
+using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 
 namespace SSMS_EnvTabs
 {
-    internal sealed class UpdatePromptDialog : Form
+    internal sealed class UpdatePromptDialog : DialogWindow, IDisposable
     {
         private readonly Action releaseNotesRequested;
         private readonly Action openConfigRequested;
-
-        private static readonly Color TopPanelColor = ColorTranslator.FromHtml("#2c2c2c");
-        private static readonly Color BottomPanelColor = ColorTranslator.FromHtml("#282828");
-        private static readonly Color PrimaryButtonColor = ColorTranslator.FromHtml("#9184ee");
-        private static readonly Color PrimaryButtonHoverColor = ColorTranslator.FromHtml("#867bda");
-        private static readonly Color SecondaryButtonColor = ColorTranslator.FromHtml("#353535");
-        private static readonly Color SecondaryButtonHoverColor = ColorTranslator.FromHtml("#3a3a3a");
-        private static readonly Color TextColor = ColorTranslator.FromHtml("#f0f0f0");
+        private WinFormsDialogResult dialogResult = WinFormsDialogResult.Cancel;
+        private Button installButton;
+        private Button openConfigButton;
+        private Button laterButton;
 
         public UpdatePromptDialog(string latestVersion, string currentVersion, Action releaseNotesRequested, Action openConfigRequested)
         {
             this.releaseNotesRequested = releaseNotesRequested;
             this.openConfigRequested = openConfigRequested;
-            Text = "SSMS EnvTabs Update";
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
+
+            Title = "SSMS EnvTabs Update";
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            ResizeMode = ResizeMode.NoResize;
             ShowInTaskbar = false;
-            AutoSize = false;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            Padding = new Padding(0);
-            ClientSize = new Size(460, 240);
+            SizeToContent = SizeToContent.Height;
+            Width = 480;
+            MinWidth = 480;
 
-            BackColor = TopPanelColor;
-            ForeColor = TextColor;
+            BuildUi(latestVersion, currentVersion);
+            ApplyThemeResources();
+        }
 
-            var header = new Label
+        public new WinFormsDialogResult ShowDialog()
+        {
+            base.ShowDialog();
+            return dialogResult;
+        }
+
+        public void Dispose()
+        {
+            if (IsVisible)
             {
-                AutoSize = true,
-                MaximumSize = new Size(420, 0),
+                Close();
+            }
+        }
+
+        private void BuildUi(string latestVersion, string currentVersion)
+        {
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var contentPanel = new StackPanel
+            {
+                Margin = new Thickness(16, 14, 16, 10),
+                Orientation = Orientation.Vertical
+            };
+
+            var header = new TextBlock
+            {
                 Text = "EnvTabs update available!",
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, SystemFonts.MessageBoxFont.Size + 5f, FontStyle.Bold)
+                FontWeight = FontWeights.Bold,
+                FontSize = SystemFonts.MessageFontSize + 6,
+                Margin = new Thickness(0, 0, 0, 10)
             };
+            contentPanel.Children.Add(header);
 
-            var versionTable = new TableLayoutPanel
+            var versionGrid = new Grid
             {
-                ColumnCount = 2,
-                RowCount = 2,
-                AutoSize = true,
-                Margin = Padding.Empty,
-                Padding = Padding.Empty
+                Margin = new Thickness(0, 0, 0, 10)
             };
-            versionTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            versionTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            versionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            versionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            versionGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            versionGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var currentLabel = new Label
-            {
-                AutoSize = true,
-                Text = "Current:",
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, SystemFonts.MessageBoxFont.Size + 1f, FontStyle.Regular)
-            };
-            var currentValue = new Label
-            {
-                AutoSize = true,
-                Text = currentVersion,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, SystemFonts.MessageBoxFont.Size + 2f, FontStyle.Bold),
-                ForeColor = TextColor
-            };
-            var availableLabel = new Label
-            {
-                AutoSize = true,
-                Text = "Available:",
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, SystemFonts.MessageBoxFont.Size + 1f, FontStyle.Regular)
-            };
-            var availableValue = new Label
-            {
-                AutoSize = true,
-                Text = latestVersion,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, SystemFonts.MessageBoxFont.Size + 2f, FontStyle.Bold),
-                ForeColor = TextColor
-            };
+            AddVersionRow(versionGrid, 0, "Current:", currentVersion);
+            AddVersionRow(versionGrid, 1, "Available:", latestVersion);
 
-            versionTable.Controls.Add(currentLabel, 0, 0);
-            versionTable.Controls.Add(currentValue, 1, 0);
-            versionTable.Controls.Add(availableLabel, 0, 1);
-            versionTable.Controls.Add(availableValue, 1, 1);
+            contentPanel.Children.Add(versionGrid);
 
-            var releaseNotesLink = new LinkLabel
+            var releaseNotes = new TextBlock
             {
-                AutoSize = true,
-                MaximumSize = new Size(420, 0),
-                Text = "Full release notes here.",
-                LinkColor = ColorTranslator.FromHtml("#bcbcbc"),
-                ActiveLinkColor = ColorTranslator.FromHtml("#ffffff"),
-                VisitedLinkColor = ColorTranslator.FromHtml("#bcbcbc")
+                Margin = new Thickness(0, 8, 0, 6)
             };
-            releaseNotesLink.LinkClicked += (sender, args) =>
-            {
-                releaseNotesRequested?.Invoke();
-            };
+            var link = new Hyperlink(new Run("Full release notes here."));
+            link.SetResourceReference(TextElement.ForegroundProperty, EnvironmentColors.ControlLinkTextBrushKey);
+            link.Click += (s, e) => releaseNotesRequested?.Invoke();
+            releaseNotes.Inlines.Add(link);
+            contentPanel.Children.Add(releaseNotes);
 
-            var configNote = new Label
+            var configNote = new TextBlock
             {
-                AutoSize = true,
-                MaximumSize = new Size(420, 0),
                 Text = "To disable update checking, press \"Open Config\" below.",
-                ForeColor = ColorTranslator.FromHtml("#bcbcbc")
+                TextWrapping = TextWrapping.Wrap
+            };
+            contentPanel.Children.Add(configNote);
+
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 6, 0, 8)
             };
 
-            var installButton = new RoundedButton
+            installButton = new Button
             {
-                Text = "&Install",
-                DialogResult = DialogResult.Yes,
-                AutoSize = false,
-                Size = new Size(110, 26),
-                TabIndex = 0,
-                IsPrimary = true,
-                UseShieldIcon = true
+                Content = BuildInstallButtonContent(),
+                MinWidth = 110,
+                Height = 26,
+                Margin = new Thickness(6, 10, 6, 10),
+                IsDefault = true
+            };
+            ApplyControlBrushes(installButton);
+            installButton.Click += (s, e) =>
+            {
+                dialogResult = WinFormsDialogResult.Yes;
+                this.DialogResult = true;
             };
 
-            var openConfigButton = new RoundedButton
+            openConfigButton = new Button
             {
-                Text = "&Open Config",
-                AutoSize = false,
-                Size = new Size(120, 26),
-                TabIndex = 1,
-                IsPrimary = false,
-                DialogResult = DialogResult.OK
+                Content = "_Open Config",
+                MinWidth = 120,
+                Height = 26,
+                Margin = new Thickness(6, 10, 6, 10)
             };
-            openConfigButton.Click += (sender, args) =>
+            ApplyControlBrushes(openConfigButton);
+            openConfigButton.Click += (s, e) =>
             {
                 openConfigRequested?.Invoke();
-                Close();
+                dialogResult = WinFormsDialogResult.OK;
+                this.DialogResult = true;
             };
 
-            var laterButton = new RoundedButton
+            laterButton = new Button
             {
-                Text = "&Later",
-                DialogResult = DialogResult.Cancel,
-                AutoSize = false,
-                Size = new Size(110, 26),
-                TabIndex = 2,
-                IsPrimary = false
+                Content = "_Later",
+                MinWidth = 110,
+                Height = 26,
+                Margin = new Thickness(6, 10, 6, 10),
+                IsCancel = true
             };
-
-            AcceptButton = null;
-            CancelButton = laterButton;
-
-            var topPanel = new Panel
+            ApplyControlBrushes(laterButton);
+            laterButton.Click += (s, e) =>
             {
-                Dock = DockStyle.Fill,
-                BackColor = TopPanelColor,
-                Padding = new Padding(16, 14, 16, 10)
+                dialogResult = WinFormsDialogResult.Cancel;
+                this.DialogResult = false;
             };
 
-            var bottomPanel = new Panel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 48,
-                BackColor = BottomPanelColor
-            };
+            buttonPanel.Children.Add(installButton);
+            buttonPanel.Children.Add(openConfigButton);
+            buttonPanel.Children.Add(laterButton);
 
-            var mainLayout = new TableLayoutPanel
-            {
-                ColumnCount = 1,
-                RowCount = 3,
-                Dock = DockStyle.Fill,
-                Padding = Padding.Empty,
-                Margin = Padding.Empty
-            };
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Grid.SetRow(contentPanel, 0);
+            Grid.SetRow(buttonPanel, 1);
 
-            var topBlock = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                AutoSize = true,
-                Dock = DockStyle.Fill
-            };
-            topBlock.Controls.Add(header);
-            topBlock.Controls.Add(new Label { Height = 6, AutoSize = false });
-            topBlock.Controls.Add(versionTable);
+            root.Children.Add(contentPanel);
+            root.Children.Add(buttonPanel);
 
-            var bottomBlock = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                AutoSize = true,
-                Dock = DockStyle.Fill
-            };
-            bottomBlock.Controls.Add(new Label { Height = 18, AutoSize = false });
-            bottomBlock.Controls.Add(releaseNotesLink);
-            bottomBlock.Controls.Add(new Label { Height = 6, AutoSize = false });
-            bottomBlock.Controls.Add(configNote);
-
-            mainLayout.Controls.Add(topBlock, 0, 0);
-            mainLayout.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 1);
-            mainLayout.Controls.Add(bottomBlock, 0, 2);
-
-            topPanel.Controls.Add(mainLayout);
-
-            var buttonFlow = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                BackColor = BottomPanelColor,
-                Margin = Padding.Empty,
-                Padding = Padding.Empty
-            };
-
-            installButton.Margin = new Padding(6, 10, 6, 10);
-            openConfigButton.Margin = new Padding(6, 10, 6, 10);
-            laterButton.Margin = new Padding(6, 10, 6, 10);
-
-            buttonFlow.Controls.Add(installButton);
-            buttonFlow.Controls.Add(openConfigButton);
-            buttonFlow.Controls.Add(laterButton);
-
-            bottomPanel.Controls.Add(buttonFlow);
-            bottomPanel.Resize += (s, e) => CenterFlow(bottomPanel, buttonFlow);
-
-            Controls.Add(topPanel);
-            Controls.Add(bottomPanel);
-
-            installButton.ApplyColors(PrimaryButtonColor, PrimaryButtonHoverColor, Color.Black, TextColor);
-            openConfigButton.ApplyColors(SecondaryButtonColor, SecondaryButtonHoverColor, TextColor, TextColor);
-            laterButton.ApplyColors(SecondaryButtonColor, SecondaryButtonHoverColor, TextColor, TextColor);
-            ShowKeyboardCuesAlways();
-
-            ActiveControl = releaseNotesLink;
+            Content = root;
         }
 
-        protected override bool ShowKeyboardCues => true;
-
-        protected override void OnShown(EventArgs e)
+        private void ApplyThemeResources()
         {
-            base.OnShown(e);
-            ShowKeyboardCuesAlways();
+            SetResourceReference(BackgroundProperty, EnvironmentColors.ToolWindowBackgroundBrushKey);
+            SetResourceReference(ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+
+            if (Content is FrameworkElement root)
+            {
+                root.SetResourceReference(BackgroundProperty, EnvironmentColors.ToolWindowBackgroundBrushKey);
+                root.SetResourceReference(TextElement.ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+            }
+
+            ApplyDialogButtonStyles();
         }
 
-        private static void CenterFlow(Panel panel, Control flow)
+        private void ApplyDialogButtonStyles()
         {
-            int x = Math.Max(0, (panel.Width - flow.Width) / 2);
-            int y = Math.Max(0, (panel.Height - flow.Height) / 2);
-            flow.Location = new Point(x, y);
+            var baseBackground = TryFindResource(EnvironmentColors.ToolWindowBackgroundBrushKey) as Brush
+                ?? TryFindResource(SystemColors.ControlBrushKey) as Brush
+                ?? Brushes.Transparent;
+
+            var baseForeground = TryFindResource(EnvironmentColors.ToolWindowTextBrushKey) as Brush
+                ?? TryFindResource(SystemColors.ControlTextBrushKey) as Brush
+                ?? Brushes.Black;
+
+            bool isLightTheme = GetRelativeLuminance(GetBrushColor(baseBackground, Colors.White)) > 0.6;
+
+            var primaryBaseColor = (Color)ColorConverter.ConvertFromString(isLightTheme ? "#5649B0" : "#9184EE");
+            var primaryHoverColor = (Color)ColorConverter.ConvertFromString(isLightTheme ? "#665bb7" : "#867bda");
+
+            var accentBrush = new SolidColorBrush(primaryBaseColor);
+            var primaryHover = new SolidColorBrush(primaryHoverColor);
+            var primaryPressed = BlendBrush(accentBrush, Colors.Black, 0.12f);
+
+            var accentForeground = isLightTheme ? Brushes.White : Brushes.Black;
+            var secondaryForeground = isLightTheme ? Brushes.Black : Brushes.White;
+
+            var baseBorder = WithOpacity(secondaryForeground, 0.28);
+            var secondaryHover = isLightTheme
+                ? BlendBrush(baseBackground, Colors.Black, 0.06f)
+                : BlendBrush(baseBackground, Colors.White, 0.06f);
+            var secondaryPressed = isLightTheme
+                ? BlendBrush(baseBackground, Colors.Black, 0.12f)
+                : BlendBrush(baseBackground, Colors.Black, 0.08f);
+
+            var primaryStyle = CreateButtonStyle(accentBrush, baseBorder, accentForeground, primaryHover, primaryPressed);
+            var secondaryStyle = CreateButtonStyle(baseBackground, baseBorder, secondaryForeground, secondaryHover, secondaryPressed);
+
+            ApplyButtonStyle(installButton, primaryStyle);
+            ApplyButtonStyle(openConfigButton, secondaryStyle);
+            ApplyButtonStyle(laterButton, secondaryStyle);
         }
 
-        private const int WM_UPDATEUISTATE = 0x0128;
-        private const int UIS_CLEAR = 2;
-        private const int UISF_HIDEACCEL = 0x2;
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-
-        private void ShowKeyboardCuesAlways()
+        private static Color GetBrushColor(Brush brush, Color fallback)
         {
-            if (!IsHandleCreated)
+            if (brush is SolidColorBrush solidBrush)
+            {
+                return solidBrush.Color;
+            }
+
+            return fallback;
+        }
+
+        private static double GetRelativeLuminance(Color color)
+        {
+            return (0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B) / 255.0;
+        }
+
+        private static void ApplyButtonStyle(Button button, Style style)
+        {
+            if (button == null || style == null)
             {
                 return;
             }
 
-            int wParam = (UISF_HIDEACCEL << 16) | UIS_CLEAR;
-            SendMessage(Handle, WM_UPDATEUISTATE, (IntPtr)wParam, IntPtr.Zero);
+            button.ClearValue(BackgroundProperty);
+            button.ClearValue(ForegroundProperty);
+            button.ClearValue(BorderBrushProperty);
+
+            button.Style = style;
+            button.MinHeight = 24;
+            button.Padding = new Thickness(12, 4, 12, 4);
         }
 
-        private sealed class RoundedButton : Button
+        private Style CreateButtonStyle(Brush background, Brush border, Brush foreground, Brush hoverBackground, Brush pressedBackground)
         {
-            private Color backColor = SecondaryButtonColor;
-            private Color hoverBackColor = SecondaryButtonColor;
-            private Color foreColor = TextColor;
-            private Color focusBorder = TextColor;
-            private Image shieldIcon;
-            private bool isHovered;
+            var style = new Style(typeof(Button));
+            style.Setters.Add(new Setter(BackgroundProperty, background));
+            style.Setters.Add(new Setter(BorderBrushProperty, border));
+            style.Setters.Add(new Setter(ForegroundProperty, foreground));
+            style.Setters.Add(new Setter(BorderThicknessProperty, new Thickness(1)));
+            style.Setters.Add(new Setter(HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+            style.Setters.Add(new Setter(VerticalContentAlignmentProperty, VerticalAlignment.Center));
 
-            public bool IsPrimary { get; set; }
-            public bool UseShieldIcon { get; set; }
+            var template = new ControlTemplate(typeof(Button));
+            var borderFactory = new FrameworkElementFactory(typeof(Border));
+            borderFactory.Name = "Bd";
+            borderFactory.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(BackgroundProperty));
+            borderFactory.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(BorderBrushProperty));
+            borderFactory.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(BorderThicknessProperty));
+            borderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
 
-            public RoundedButton()
+            var contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            contentPresenter.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
+            contentPresenter.SetValue(ContentPresenter.ContentTemplateProperty, new TemplateBindingExtension(ContentControl.ContentTemplateProperty));
+            contentPresenter.SetValue(ContentPresenter.ContentStringFormatProperty, new TemplateBindingExtension(ContentControl.ContentStringFormatProperty));
+            contentPresenter.SetValue(ContentPresenter.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
+            contentPresenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            contentPresenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            contentPresenter.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
+
+            borderFactory.AppendChild(contentPresenter);
+            template.VisualTree = borderFactory;
+
+            var hoverTrigger = new Trigger { Property = IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, hoverBackground, "Bd"));
+
+            var pressedTrigger = new Trigger { Property = Button.IsPressedProperty, Value = true };
+            pressedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, pressedBackground, "Bd"));
+
+            var disabledTrigger = new Trigger { Property = IsEnabledProperty, Value = false };
+            disabledTrigger.Setters.Add(new Setter(OpacityProperty, 0.55));
+
+            template.Triggers.Add(hoverTrigger);
+            template.Triggers.Add(pressedTrigger);
+            template.Triggers.Add(disabledTrigger);
+
+            style.Setters.Add(new Setter(TemplateProperty, template));
+
+            return style;
+        }
+
+        private Brush GetAccentBrush()
+        {
+            return TryGetEnvironmentBrush("AccentMediumBrushKey")
+                ?? TryGetEnvironmentBrush("AccentDarkBrushKey")
+                ?? TryGetEnvironmentBrush("AccentLightBrushKey")
+                ?? TryFindResource(EnvironmentColors.ControlLinkTextBrushKey) as Brush
+                ?? TryFindResource(SystemColors.HighlightBrushKey) as Brush;
+        }
+
+        private Brush TryGetEnvironmentBrush(string keyName)
+        {
+            var property = typeof(EnvironmentColors).GetProperty(keyName, BindingFlags.Public | BindingFlags.Static);
+            if (property?.GetValue(null) is object resourceKey)
             {
-                SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
-                FlatStyle = FlatStyle.Flat;
-                FlatAppearance.BorderSize = 0;
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, SystemFonts.MessageBoxFont.Size - 1f);
+                return TryFindResource(resourceKey) as Brush;
             }
 
-            public void ApplyColors(Color back, Color hoverBack, Color fore, Color focus)
+            return null;
+        }
+
+        private static Brush WithOpacity(Brush brush, double opacity)
+        {
+            if (brush is SolidColorBrush solid)
             {
-                backColor = back;
-                hoverBackColor = hoverBack;
-                foreColor = fore;
-                focusBorder = focus;
-                shieldIcon = SystemIcons.Shield.ToBitmap();
-                Invalidate();
+                var color = solid.Color;
+                var alpha = (byte)Math.Max(0, Math.Min(255, opacity * 255));
+                return new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
             }
 
-            protected override void OnMouseEnter(EventArgs e)
+            return brush;
+        }
+
+        private static Brush BlendBrush(Brush brush, Color blendColor, float amount)
+        {
+            if (brush is SolidColorBrush solid)
             {
-                base.OnMouseEnter(e);
-                isHovered = true;
-                Invalidate();
+                var blended = BlendColor(solid.Color, blendColor, amount);
+                return new SolidColorBrush(blended);
             }
 
-            protected override void OnMouseLeave(EventArgs e)
+            return brush;
+        }
+
+        private static Color BlendColor(Color baseColor, Color blendColor, float blendAmount)
+        {
+            blendAmount = Math.Max(0, Math.Min(1, blendAmount));
+            byte r = (byte)(baseColor.R + (blendColor.R - baseColor.R) * blendAmount);
+            byte g = (byte)(baseColor.G + (blendColor.G - baseColor.G) * blendAmount);
+            byte b = (byte)(baseColor.B + (blendColor.B - baseColor.B) * blendAmount);
+            return Color.FromArgb(baseColor.A, r, g, b);
+        }
+
+        private static void ApplyControlBrushes(Control control)
+        {
+            if (control == null)
             {
-                base.OnMouseLeave(e);
-                isHovered = false;
-                Invalidate();
+                return;
             }
 
-            protected override void OnPaint(PaintEventArgs e)
+            control.SetResourceReference(BackgroundProperty, EnvironmentColors.ToolWindowBackgroundBrushKey);
+            control.SetResourceReference(ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+        }
+
+        private static void AddVersionRow(Grid grid, int rowIndex, string label, string value)
+        {
+            var labelBlock = new TextBlock
             {
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var rect = new RectangleF(0, 0, Width, Height);
-                e.Graphics.Clear(Parent?.BackColor ?? BackColor);
+                Text = label,
+                Margin = new Thickness(0, 2, 10, 2)
+            };
 
-                Color fillColor = isHovered ? hoverBackColor : backColor;
-                using (var path = CreateRoundedRectanglePath(rect, 8))
-                using (var brush = new SolidBrush(fillColor))
-                {
-                    e.Graphics.FillPath(brush, path);
-                }
-
-                if (Focused)
-                {
-                    // Draw Outer Border (2px)
-                    var borderRect = RectangleF.Inflate(rect, -1f, -1f);
-                    using (var pen = new Pen(focusBorder, 2f))
-                    using (var path = CreateRoundedRectanglePath(borderRect, 8))
-                    {
-                        e.Graphics.DrawPath(pen, path);
-                    }
-
-                    // Draw Gap (1px, Parent Background)
-                    var gapRect = RectangleF.Inflate(rect, -2.5f, -2.5f);
-                    using (var gapPen = new Pen(Parent?.BackColor ?? BackColor, 1f))
-                    using (var gapPath = CreateRoundedRectanglePath(gapRect, 7f))
-                    {
-                        e.Graphics.DrawPath(gapPen, gapPath);
-                    }
-                }
-
-                if (UseShieldIcon && shieldIcon != null)
-                {
-                    int iconSize = 16;
-                    int gap = 6;
-                    int textWidth = TextRenderer.MeasureText(Text, Font).Width;
-                    int totalWidth = iconSize + gap + textWidth;
-                    int startX = Math.Max(0, (Width - totalWidth) / 2);
-                    int iconY = (Height - iconSize) / 2;
-                    e.Graphics.DrawImage(shieldIcon, new Rectangle(startX, iconY, iconSize, iconSize));
-
-                    var textRect = new Rectangle(startX + iconSize + gap, 0, textWidth, Height);
-                    TextRenderer.DrawText(
-                        e.Graphics,
-                        Text,
-                        Font,
-                        textRect,
-                        foreColor,
-                        TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine
-                    );
-                }
-                else
-                {
-                    TextRenderer.DrawText(
-                        e.Graphics,
-                        Text,
-                        Font,
-                        new Rectangle(0, 0, Width, Height),
-                        foreColor,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine
-                    );
-                }
-
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.Default;
-            }
-
-            private static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(RectangleF rect, float radius)
+            var valueBlock = new TextBlock
             {
-                float diameter = radius * 2;
-                var path = new System.Drawing.Drawing2D.GraphicsPath();
-                if (diameter <= 0)
-                {
-                    path.AddRectangle(rect);
-                    return path;
-                }
+                Text = value,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 2, 0, 2)
+            };
 
-                var arc = new RectangleF(rect.Location, new SizeF(diameter, diameter));
-                path.AddArc(arc, 180, 90);
-                arc.X = rect.Right - diameter;
-                path.AddArc(arc, 270, 90);
-                arc.Y = rect.Bottom - diameter;
-                path.AddArc(arc, 0, 90);
-                arc.X = rect.Left;
-                path.AddArc(arc, 90, 90);
-                path.CloseFigure();
-                return path;
-            }
+            Grid.SetRow(labelBlock, rowIndex);
+            Grid.SetColumn(labelBlock, 0);
+            Grid.SetRow(valueBlock, rowIndex);
+            Grid.SetColumn(valueBlock, 1);
+
+            grid.Children.Add(labelBlock);
+            grid.Children.Add(valueBlock);
+        }
+
+        private static UIElement BuildInstallButtonContent()
+        {
+            var panel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            var shield = System.Drawing.SystemIcons.Shield;
+            var image = new Image
+            {
+                Width = 16,
+                Height = 16,
+                Margin = new Thickness(0, 0, 6, 0),
+                Source = Imaging.CreateBitmapSourceFromHIcon(
+                    shield.Handle,
+                    Int32Rect.Empty,
+                    BitmapSizeOptions.FromWidthAndHeight(16, 16))
+            };
+
+            var text = new TextBlock
+            {
+                Text = "Install",
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            panel.Children.Add(image);
+            panel.Children.Add(text);
+
+            return panel;
         }
     }
 }

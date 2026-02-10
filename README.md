@@ -25,67 +25,14 @@ When you connect to a server or database that doesn't have a matching rule, EnvT
 
 ![Configuration Prompt](images/config-prompt-colors.png)
 
-### Change Tab Color
-
-You can also change a tab color directly in SSMS. Right-click the query tab, choose **Set Tab Color**, and pick a color.
-
-![Set Tab Color](images/set-tab-color.png)
-
-### Example Configuration
-
-```json
-{
-  "settings": {
-    "enableLogging": false,
-    "enableAutoRename": true,
-    "enableAutoColor": true,
-    "enableConfigurePrompt": true,
-    "enableConnectionPolling": true,
-    "enableUpdateChecks": true,
-    "autoConfigure": "server db",
-    "suggestedGroupNameStyle": "[server] [db]",
-    "newQueryRenameStyle": "[#]. [groupName]",
-    "savedFileRenameStyle": "[filename]"
-
-  },
-  "serverAlias": {
-    "MY-LONG-SERVER-NAME": "AppServer"
-  },
-  "connectionGroups": [
-    {
-      "groupName": "Example: Exact Match",
-      "server": "MY-LONG-SERVER-NAME",
-      "database": "MyDatabase",
-      "priority": 10,
-      "colorIndex": 9
-    }
-  ]
-}
-
-```
 ## Documentation
 
 Full documentation is available in the [GitHub Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
 - **[Installation](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Installation-Guide)**: Setup and requirements.
-- **[Updating](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Updating)**: How updates work and how to check manually.
 - **[Configuration](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)**: Global settings and prompts.
-- **[Group Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Group-Rules)**: Creating rules for your servers.
-- **[Manual Regex Rules](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Manual-Regex)**: Advanced regex matching overrides.
-- **[Tab Text Settings](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Text-Settings)**: How to clean up tab text.
-- **[Tab Appearance](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Appearance)**: Customizing tab naming for new vs saved queries.
-- **[Configuration Prompts](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Prompts)**: Prompts and warnings you may see.
-- **[Tools Menu and Buttons](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tools-Menu-Buttons)**: Show or hide the EnvTabs menu group and buttons.
 - **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)**: List of available colors (0-15).
-- **[Wildcard Patterns](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Wildcard-Patterns)**: Matching syntax.
 - **[How it Works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)**: Technical details.
-- **[Troubleshooting](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Troubleshooting)**: Common issues and solutions.
-
-## Support & Contributing
-
-*   **Issues**: [GitHub Issues](https://github.com/Blake-goofy/SSMS-EnvTabs/issues)
-*   **Discussions**: [GitHub Discussions](https://github.com/Blake-goofy/SSMS-EnvTabs/discussions)
-*   **Source Code**: To build from source, clone the repo and open `SSMS EnvTabs.sln` in Visual Studio 2019+ (VS SDK required).
 
 ## Author
 
