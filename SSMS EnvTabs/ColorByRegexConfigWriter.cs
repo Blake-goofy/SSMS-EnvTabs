@@ -155,10 +155,12 @@ namespace SSMS_EnvTabs
             {
                 foreach (var rule in rules)
                 {
+                    // Skip null-GroupName (silent) rules and null-ColorIndex rules.
+                    if (string.IsNullOrWhiteSpace(rule.GroupName) || !rule.ColorIndex.HasValue) continue;
                     if (groupToPaths.TryGetValue(rule.GroupName, out var paths) && paths.Count > 0)
                     {
                         string baseRegex = BuildBaseRegex(paths);
-                        string line = BuildResolvedRegexLine(baseRegex, rule, overrideColorByBaseRegex);
+                        string line = BuildResolvedRegexLine(baseRegex, rule, overrideColorByBaseRegex, groupIdColorMap);
                         entries.Add(new RegexEntry { Pattern = line, Priority = rule.Priority });
                     }
                 }
@@ -241,6 +243,8 @@ namespace SSMS_EnvTabs
             var map = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var rule in rules)
             {
+                // Skip null-GroupName (silent) rules — they do not generate color entries.
+                if (string.IsNullOrWhiteSpace(rule.GroupName)) continue;
                 if (!map.ContainsKey(rule.GroupName))
                 {
                     map[rule.GroupName] = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -295,6 +299,8 @@ namespace SSMS_EnvTabs
 
             foreach (var rule in rules.OrderBy(r => r.Priority).ThenBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase))
             {
+                // Skip null-GroupName (silent) rules and null-ColorIndex rules — they produce no color entry.
+                if (string.IsNullOrWhiteSpace(rule.GroupName) || !rule.ColorIndex.HasValue) continue;
                 groupToPaths.TryGetValue(rule.GroupName, out var paths);
                 string baseRegex = BuildBaseRegex(paths);
                 lines.Add(BuildResolvedRegexLine(baseRegex, rule, null));
@@ -304,7 +310,7 @@ namespace SSMS_EnvTabs
             return lines;
         }
 
-        private static string BuildResolvedRegexLine(string baseRegex, TabRuleMatcher.CompiledRule rule, Dictionary<string, int> overrideColorByBaseRegex)
+        private static string BuildResolvedRegexLine(string baseRegex, TabRuleMatcher.CompiledRule rule, Dictionary<string, int> overrideColorByBaseRegex, Dictionary<int, int> groupIdColorMap = null)
         {
             if (string.IsNullOrWhiteSpace(baseRegex))
             {
@@ -312,17 +318,59 @@ namespace SSMS_EnvTabs
             }
 
             string normalizedBase = StripSaltComment(baseRegex);
+
+            // Determine the effective target color: prefer what the config says; fall back to
+            // the SSMS JSON override only when the two agree (or the config has no value).
+            int? targetColor = rule.ColorIndex;
+
             if (overrideColorByBaseRegex != null && overrideColorByBaseRegex.TryGetValue(normalizedBase, out int overrideColor))
             {
-                return ApplyColorIndex(normalizedBase, overrideColor);
+                if (!targetColor.HasValue || overrideColor == targetColor.Value)
+                {
+                    EnvTabsLog.Verbose($"BuildResolvedRegexLine: Applying SSMS override colorIndex={overrideColor} for group='{rule.GroupName}'");
+                    targetColor = overrideColor;
+                }
+                else
+                {
+                    // The SSMS JSON entry is stale: it was recorded for a previous visit to that
+                    // color. The JSON accumulates all past entries, so after cycling 0→1→2→0 the
+                    // base regex for color 0 can collide with an old entry pointing to color 1.
+                    // Keep the config value as-is and fall through to pick a collision-free salt.
+                    EnvTabsLog.Info($"BuildResolvedRegexLine: Ignoring stale SSMS override colorIndex={overrideColor} (config colorIndex={targetColor.Value}) for group='{rule.GroupName}'");
+                }
             }
 
-            if (rule.ColorIndex >= 0)
+            if (!targetColor.HasValue)
             {
-                return ApplyColorIndex(normalizedBase, rule.ColorIndex);
+                return normalizedBase;
             }
 
-            return normalizedBase;
+            // Build the set of hashes that SSMS already has mapped to a DIFFERENT color.
+            // Solve() will skip any candidate whose hash is in this set so that SSMS can
+            // never silently override our chosen color by matching a stale JSON entry.
+            System.Collections.Generic.HashSet<int> forbiddenHashes = null;
+            if (groupIdColorMap != null && groupIdColorMap.Count > 0)
+            {
+                foreach (var kvp in groupIdColorMap)
+                {
+                    if (kvp.Value != targetColor.Value)
+                    {
+                        if (forbiddenHashes == null)
+                        {
+                            forbiddenHashes = new System.Collections.Generic.HashSet<int>();
+                        }
+
+                        forbiddenHashes.Add(kvp.Key);
+                    }
+                }
+
+                if (forbiddenHashes != null)
+                {
+                    EnvTabsLog.Verbose($"BuildResolvedRegexLine: {forbiddenHashes.Count} forbidden hash(es) for group='{rule.GroupName}' targetColor={targetColor.Value}");
+                }
+            }
+
+            return ApplyColorIndex(normalizedBase, targetColor.Value, forbiddenHashes);
         }
 
         private static string BuildBaseRegex(SortedSet<string> paths)
@@ -350,7 +398,7 @@ namespace SSMS_EnvTabs
             return $"(?:^|[\\\\/])(?:{string.Join("|", escaped)}){suffix}$";
         }
 
-        private static string ApplyColorIndex(string baseRegex, int targetColorIndex)
+        private static string ApplyColorIndex(string baseRegex, int targetColorIndex, System.Collections.Generic.ICollection<int> forbiddenHashes = null)
         {
             if (string.IsNullOrWhiteSpace(baseRegex))
             {
@@ -364,12 +412,15 @@ namespace SSMS_EnvTabs
 
             int currentHash = TabGroupColorSolver.GetSsmsStableHashCode(baseRegex);
             int currentColor = Math.Abs(currentHash) % 16;
-            if (currentColor == targetColorIndex)
+            // Only use the unsalted base regex if it already produces the right color AND its
+            // hash isn't recorded in the SSMS JSON with a different color (which would make SSMS
+            // override it back to the wrong color).
+            if (currentColor == targetColorIndex && (forbiddenHashes == null || !forbiddenHashes.Contains(currentHash)))
             {
                 return baseRegex;
             }
 
-            string newSalt = TabGroupColorSolver.Solve(baseRegex, targetColorIndex);
+            string newSalt = TabGroupColorSolver.Solve(baseRegex, targetColorIndex, forbiddenHashes);
             if (!string.IsNullOrWhiteSpace(newSalt))
             {
                 return baseRegex + $"(?#salt:{newSalt})";
@@ -468,6 +519,8 @@ namespace SSMS_EnvTabs
                 return null;
             }
 
+            EnvTabsLog.Verbose($"BuildOverrideColorByBaseRegex: SSMS JSON has {groupIdColorMap.Count} entries: [{string.Join(", ", groupIdColorMap.Select(kvp => $"hash={kvp.Key}→colorIndex={kvp.Value}"))}]");
+
             var lines = SplitLines(existingContent);
             int begin = lines.FindIndex(line => string.Equals(line?.TrimEnd(), BeginMarker, StringComparison.Ordinal));
             int end = lines.FindIndex(line => string.Equals(line?.TrimEnd(), EndMarker, StringComparison.Ordinal));
@@ -497,8 +550,13 @@ namespace SSMS_EnvTabs
                     string baseRegex = StripSaltComment(line);
                     if (!string.IsNullOrWhiteSpace(baseRegex))
                     {
+                        EnvTabsLog.Verbose($"BuildOverrideColorByBaseRegex: Matched line hash={groupId}→colorIndex={desiredColor} (line='{line}')");
                         overrides[baseRegex] = desiredColor;
                     }
+                }
+                else
+                {
+                    EnvTabsLog.Verbose($"BuildOverrideColorByBaseRegex: No SSMS JSON entry for line hash={groupId} (line='{line}')");
                 }
             }
 

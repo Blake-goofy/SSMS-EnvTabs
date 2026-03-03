@@ -1,9 +1,12 @@
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio;
+using Microsoft.VisualStudio.Shell.Interop;
 using System.Diagnostics.CodeAnalysis;
 using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Json;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,11 +26,42 @@ namespace SSMS_EnvTabs
 
             LogColorSnapshot(reason);
 
-            if (info != null && !info.ChangesApplied)
+            if (info != null && info.Result == System.Windows.Forms.DialogResult.Cancel)
+            {
+                // The auto-configure dialog was cancelled. The rule was already saved with
+                // GroupName=null/ColorIndex=null to suppress future prompts, so color clears on
+                // its own when the config reloads. However, the tab rename must be explicitly
+                // reverted here because ReloadAndApplyConfig skips tabs that have no matching group.
+                RevertRenamedTabsForServer(info.Server);
+                UpdateColorOnly("DialogClosed:Cancel", force: true);
+                suppressColorUpdatesUntilUtc = DateTime.UtcNow.AddSeconds(2);
+            }
+            else if (info != null && !info.ChangesApplied)
             {
                 UpdateColorOnly("DialogClosed", force: true);
                 // Avoid immediately overwriting regex with a partial snapshot after dialog close.
                 suppressColorUpdatesUntilUtc = DateTime.UtcNow.AddSeconds(2);
+            }
+        }
+
+        private void RevertRenamedTabsForServer(string server)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (string.IsNullOrWhiteSpace(server))
+            {
+                return;
+            }
+
+            var docs = GetOpenDocumentsSnapshot();
+            foreach (var doc in docs)
+            {
+                if (!string.Equals(doc.Server, server, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                TabRenamer.RevertCookieCaption(doc.Frame, doc.Cookie, doc.Caption);
             }
         }
 
@@ -253,6 +287,214 @@ namespace SSMS_EnvTabs
             TabGroupConfigLoader.SaveConfig(config);
         }
 
+        internal bool EditRuleForActiveConnection()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            var config = LoadConfigOrNull();
+            if (config?.ConnectionGroups == null || config.ConnectionGroups.Count == 0)
+            {
+                return false;
+            }
+
+            if (!TryGetActiveWindowFrame(out IVsWindowFrame activeFrame))
+            {
+                return false;
+            }
+
+            if (!TryGetMonikerFromFrame(activeFrame, out string moniker) || !IsSqlDocumentMoniker(moniker))
+            {
+                return false;
+            }
+
+            if (!TryGetConnectionInfo(activeFrame, out string server, out string database) || string.IsNullOrWhiteSpace(server))
+            {
+                return false;
+            }
+
+            var matchedRule = FindMatchingConnectionRule(config, server, database);
+            if (matchedRule == null)
+            {
+                EnvTabsLog.Info($"EditRuleForActiveConnection: No matching connection rule for Server='{server}', Database='{database}'.");
+                return false;
+            }
+
+            bool enableAutoRename = config.Settings?.EnableAutoRename != false;
+            bool enableColorWarning = config.Settings?.EnableColorWarning != false;
+
+            if (config.ServerAliases == null)
+            {
+                config.ServerAliases = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            config.ServerAliases.TryGetValue(server, out string existingAlias);
+
+            var usedColorIndexes = new System.Collections.Generic.HashSet<int>(
+                config.ConnectionGroups
+                    .Where(r => !ReferenceEquals(r, matchedRule) && r.ColorIndex.HasValue)
+                    .Select(r => r.ColorIndex.Value));
+
+            var dialogOptions = new NewRuleDialog.NewRuleDialogOptions
+            {
+                Server = server,
+                Database = database,
+                SuggestedName = matchedRule.GroupName,
+                SuggestedGroupNameStyle = config.Settings?.SuggestedGroupNameStyle,
+                SuggestedColorIndex = matchedRule.ColorIndex,
+                ExistingAlias = enableAutoRename ? existingAlias : null,
+                HideDatabaseRow = string.IsNullOrWhiteSpace(database),
+                HideAliasStep = true,
+                HideGroupNameRow = !enableAutoRename,
+                IsEditMode = true,
+                UsedColorIndexes = usedColorIndexes
+            };
+
+            using (var dlg = new NewRuleDialog(dialogOptions))
+            {
+                var result = dlg.ShowDialog();
+                int? resultingColorIndex = matchedRule.ColorIndex;
+
+                if (result == DialogResult.OK || result == DialogResult.Yes)
+                {
+                    // Use dlg.RuleName directly; null means user cleared the field → save null (no rename).
+                    string updatedName = dlg.RuleName;
+                    int? updatedColor = dlg.SelectedColorIndex;
+                    resultingColorIndex = updatedColor;
+
+                    bool configChanged = false;
+
+                    if (enableAutoRename && !string.Equals(updatedName, matchedRule.GroupName, StringComparison.Ordinal))
+                    {
+                        matchedRule.GroupName = updatedName;
+                        configChanged = true;
+                    }
+
+                    if (updatedColor != matchedRule.ColorIndex)
+                    {
+                        matchedRule.ColorIndex = updatedColor;
+                        configChanged = true;
+                    }
+
+                    if (configChanged)
+                    {
+                        SaveConfig(config);
+                        ReloadAndApplyConfig();
+                    }
+
+                    if (result == DialogResult.Yes)
+                    {
+                        OpenConfigInEditor();
+                    }
+                }
+
+                if (enableColorWarning && (result == DialogResult.OK || result == DialogResult.Cancel))
+                {
+                    if (resultingColorIndex.HasValue && IsColorUsedByOtherRule(config, matchedRule, resultingColorIndex.Value))
+                    {
+                        var choice = MessageBox.Show(
+                            "This color is already assigned to another connection group. Open the config to resolve?",
+                            "SSMS EnvTabs",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning);
+
+                        if (choice == DialogResult.Yes)
+                        {
+                            OpenConfigInEditor();
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private bool TryGetActiveWindowFrame(out IVsWindowFrame frame)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            frame = null;
+
+            if (monitorSelection == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                int hr = monitorSelection.GetCurrentElementValue((uint)VSConstants.VSSELELEMID.SEID_WindowFrame, out object value);
+                if (ErrorHandler.Succeeded(hr))
+                {
+                    frame = value as IVsWindowFrame;
+                    return frame != null;
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"TryGetActiveWindowFrame failed: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private static TabGroupRule FindMatchingConnectionRule(TabGroupConfig config, string server, string database)
+        {
+            if (config?.ConnectionGroups == null)
+            {
+                return null;
+            }
+
+            // Include rules with a null/empty GroupName (e.g. cancelled auto-config rules) so the
+            // Edit command can reopen and restore them rather than saying "no group found".
+            return config.ConnectionGroups
+                .Where(rule => rule != null)
+                .Where(rule => RuleMatchesConnection(rule, server, database))
+                .OrderBy(rule => rule.Priority)
+                .ThenBy(rule => rule.GroupName, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+        }
+
+        private static bool RuleMatchesConnection(TabGroupRule rule, string server, string database)
+        {
+            bool hasServer = !string.IsNullOrWhiteSpace(rule.Server);
+            bool hasDatabase = !string.IsNullOrWhiteSpace(rule.Database);
+            if (!hasServer && !hasDatabase)
+            {
+                return false;
+            }
+
+            if (hasServer && !MatchesRulePattern(rule.Server, server))
+            {
+                return false;
+            }
+
+            if (hasDatabase && !MatchesRulePattern(rule.Database, database))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool MatchesRulePattern(string pattern, string value)
+        {
+            if (string.IsNullOrWhiteSpace(pattern))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            if (pattern.IndexOf('%') >= 0)
+            {
+                string regex = "^" + Regex.Escape(pattern).Replace("%", ".*") + "$";
+                return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            }
+
+            return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
+        }
+
         [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]
         private void OnConfigChanged(object sender, FileSystemEventArgs e)
         {
@@ -339,6 +581,7 @@ namespace SSMS_EnvTabs
                             Cookie = doc.Cookie,
                             Frame = doc.Frame,
                             Server = doc.Server,
+                            ServerAlias = (config.ServerAliases != null && !string.IsNullOrEmpty(doc.Server) && config.ServerAliases.TryGetValue(doc.Server, out string _sa)) ? _sa : doc.Server,
                             Database = doc.Database,
                             FrameCaption = doc.Caption,
                             Moniker = doc.Moniker
@@ -352,7 +595,8 @@ namespace SSMS_EnvTabs
                             rules,
                             manualRules,
                             config.Settings?.NewQueryRenameStyle,
-                            config.Settings?.SavedFileRenameStyle);
+                            config.Settings?.SavedFileRenameStyle,
+                            config.Settings?.EnableRemoveDotSql != false);
                     }
                 }
                 catch (Exception ex)
@@ -457,7 +701,7 @@ namespace SSMS_EnvTabs
                     }
 
                     string database = rule.Database;
-                    string expectedGroup = BuildSuggestedGroupNameFromStyle(suggestedStyle, oldAlias, database);
+                    string expectedGroup = BuildSuggestedGroupNameFromStyle(suggestedStyle, server, oldAlias, database);
                     if (!string.Equals(rule.GroupName, expectedGroup, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
@@ -465,7 +709,7 @@ namespace SSMS_EnvTabs
 
                     aliasMatchedRules++;
 
-                    string updatedGroup = BuildSuggestedGroupNameFromStyle(suggestedStyle, newAlias, database);
+                    string updatedGroup = BuildSuggestedGroupNameFromStyle(suggestedStyle, server, newAlias, database);
                     EnvTabsLog.Info($"Updating group name for server '{server}' from '{rule.GroupName}' to '{updatedGroup}' due to alias change.");
                     rule.GroupName = updatedGroup;
                     aliasUpdatedRules++;
@@ -491,15 +735,17 @@ namespace SSMS_EnvTabs
             return updated;
         }
 
-        private static string BuildSuggestedGroupNameFromStyle(string style, string serverValue, string databaseValue)
+        private static string BuildSuggestedGroupNameFromStyle(string style, string serverName, string serverAlias, string databaseValue)
         {
-            string serverPart = serverValue ?? string.Empty;
+            string serverPart = serverName ?? string.Empty;
+            string aliasPart = !string.IsNullOrEmpty(serverAlias) ? serverAlias : serverPart;
             string dbPart = databaseValue ?? string.Empty;
 
             if (!string.IsNullOrWhiteSpace(style))
             {
                 return style
                     .Replace("[server]", serverPart)
+                    .Replace("[serverAlias]", aliasPart)
                     .Replace("[db]", dbPart);
             }
 
@@ -554,6 +800,7 @@ namespace SSMS_EnvTabs
                 if (loaded != null && loaded.Settings != null)
                 {
                     EnvTabsLog.Enabled = loaded.Settings.EnableLogging;
+                    EnvTabsLog.VerboseEnabled = loaded.Settings.EnableVerboseLogging;
                 }
 
                 cachedConfig = loaded;

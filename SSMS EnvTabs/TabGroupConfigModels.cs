@@ -51,6 +51,9 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "enableLogging", IsRequired = false, Order = 0)]
         public bool EnableLogging { get; set; } = true;
 
+        [DataMember(Name = "enableVerboseLogging", IsRequired = false, Order = 0)]
+        public bool EnableVerboseLogging { get; set; } = false;
+
         [DataMember(Name = "enableAutoRename", IsRequired = false, Order = 1)]
         public bool EnableAutoRename { get; set; } = true;
 
@@ -83,12 +86,15 @@ namespace SSMS_EnvTabs
 
         [DataMember(Name = "savedFileRenameStyle", IsRequired = false, Order = 11)]
         public string SavedFileRenameStyle { get; set; }
+
+        [DataMember(Name = "enableRemoveDotSql", IsRequired = false, Order = 12)]
+        public bool EnableRemoveDotSql { get; set; } = true;
     }
 
     [DataContract]
     internal sealed class TabGroupRule
     {
-        [DataMember(Name = "groupName", IsRequired = false, Order = 0)]
+        [DataMember(Name = "groupName", IsRequired = false, Order = 0, EmitDefaultValue = true)]
         public string GroupName { get; set; }
 
         [DataMember(Name = "server", IsRequired = false, Order = 1)]
@@ -100,7 +106,7 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "priority", IsRequired = false, Order = 3)]
         public int Priority { get; set; } = 0;
 
-        [DataMember(Name = "colorIndex", IsRequired = false, Order = 4)]
-        public int ColorIndex { get; set; } = 0;
+        [DataMember(Name = "colorIndex", IsRequired = false, Order = 4, EmitDefaultValue = true)]
+        public int? ColorIndex { get; set; }
     }
 }

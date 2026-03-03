@@ -27,8 +27,11 @@ namespace SSMS_EnvTabs
         public const int cmdidCaptureData = 0x0102;
         public const int cmdidOpenConfig = 0x0103;
         public const int cmdidCheckUpdates = 0x0104;
+        public const int cmdidEditActiveConnectionRule = 0x0105;
 
         private RdtEventManager rdtEventManager;
+
+        internal RdtEventManager RdtEventManagerInstance => rdtEventManager;
 
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
@@ -42,6 +45,7 @@ namespace SSMS_EnvTabs
             if (initialConfig?.Settings != null)
             {
                 EnvTabsLog.Enabled = initialConfig.Settings.EnableLogging;
+                EnvTabsLog.VerboseEnabled = initialConfig.Settings.EnableVerboseLogging;
                 SsmsSettingsUpdater.EnsureRegexTabColorizationEnabled(initialConfig.Settings.EnableAutoColor);
             }
 
@@ -51,6 +55,7 @@ namespace SSMS_EnvTabs
             // Register commands
             await OpenConfigCommand.InitializeAsync(this);
             await CheckUpdatesCommand.InitializeAsync(this);
+            await EditActiveConnectionRuleCommand.InitializeAsync(this);
 
             UpdateChecker.ScheduleCheck(this, initialConfig?.Settings);
         }

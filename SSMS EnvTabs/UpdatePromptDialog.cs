@@ -3,8 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Interop;
 using System.Reflection;
 using Microsoft.VisualStudio.PlatformUI;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
@@ -112,7 +110,7 @@ namespace SSMS_EnvTabs
 
             installButton = new Button
             {
-                Content = BuildInstallButtonContent(),
+                Content = "_Install",
                 MinWidth = 110,
                 Height = 26,
                 Margin = new Thickness(6, 10, 6, 10),
@@ -386,36 +384,5 @@ namespace SSMS_EnvTabs
             grid.Children.Add(valueBlock);
         }
 
-        private static UIElement BuildInstallButtonContent()
-        {
-            var panel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-
-            var shield = System.Drawing.SystemIcons.Shield;
-            var image = new Image
-            {
-                Width = 16,
-                Height = 16,
-                Margin = new Thickness(0, 0, 6, 0),
-                Source = Imaging.CreateBitmapSourceFromHIcon(
-                    shield.Handle,
-                    Int32Rect.Empty,
-                    BitmapSizeOptions.FromWidthAndHeight(16, 16))
-            };
-
-            var text = new TextBlock
-            {
-                Text = "Install",
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            panel.Children.Add(image);
-            panel.Children.Add(text);
-
-            return panel;
-        }
     }
 }

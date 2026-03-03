@@ -7,8 +7,11 @@ namespace SSMS_EnvTabs
         // Solves for a salt that results in the target ColorIndex for the given base regex.
         // <param name="baseRegex">The base regex string (e.g. filename regex).</param>
         // <param name="targetColorIndex">The desired SSMS color index (0-15).</param>
+        // <param name="forbiddenHashes">Optional set of regex hashes already recorded in the SSMS
+        //   group-color JSON with a different color. Any candidate whose hash is in this set will
+        //   be skipped — otherwise SSMS would apply its stale override and ignore our salt.</param>
         // <returns>A salt string (e.g. "123") that when appended as (?#salt:123) produces the target color.</returns>
-        public static string Solve(string baseRegex, int targetColorIndex)
+        public static string Solve(string baseRegex, int targetColorIndex, System.Collections.Generic.ICollection<int> forbiddenHashes = null)
         {
             if (targetColorIndex < 0 || targetColorIndex > 15) return null;
 
@@ -26,6 +29,13 @@ namespace SSMS_EnvTabs
                 
                 if (calculatedIndex == targetColorIndex)
                 {
+                    // Skip this candidate if SSMS already has this hash mapped to a different
+                    // color in its override JSON — SSMS would just re-apply that stale color.
+                    if (forbiddenHashes != null && forbiddenHashes.Contains(hash))
+                    {
+                        continue;
+                    }
+
                     return salt;
                 }
             }

@@ -230,7 +230,7 @@ namespace SSMS_EnvTabs
                 {
                     var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
                     string matchedGroup = manualMatch?.GroupName ?? TabRuleMatcher.MatchGroup(rules, server, database);
-                    bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+                    bool hasMatchingRule = manualMatch != null || TabRuleMatcher.MatchRule(rules, server, database) != null;
 
                     bool captionMissingGroup = !string.IsNullOrWhiteSpace(matchedGroup)
                         && (string.IsNullOrWhiteSpace(caption) || caption.IndexOf(matchedGroup, StringComparison.OrdinalIgnoreCase) < 0);
@@ -246,13 +246,15 @@ namespace SSMS_EnvTabs
                                 Cookie = docCookie,
                                 Frame = frame,
                                 Server = server,
+                                ServerAlias = (config.ServerAliases != null && !string.IsNullOrEmpty(server) && config.ServerAliases.TryGetValue(server, out string _sa)) ? _sa : server,
                                 Database = database,
                                 FrameCaption = caption,
                                 Moniker = moniker
                             };
                             string style = config.Settings?.NewQueryRenameStyle;
                             string savedStyle = config.Settings?.SavedFileRenameStyle;
-                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { ctx }, rules, manualRules, style, savedStyle);
+                            bool removeDotSql = config.Settings?.EnableRemoveDotSql != false;
+                            renamedCount = TabRenamer.ApplyRenamesOrThrow(new[] { ctx }, rules, manualRules, style, savedStyle, removeDotSql);
 
                             if (renamedCount > 0)
                             {
@@ -301,7 +303,7 @@ namespace SSMS_EnvTabs
                     {
                         string matchedGroup = TabRuleMatcher.MatchGroup(rules, server, database);
                         var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
-                        bool hasMatchingRule = !string.IsNullOrWhiteSpace(matchedGroup) || manualMatch != null;
+                        bool hasMatchingRule = manualMatch != null || TabRuleMatcher.MatchRule(rules, server, database) != null;
 
                         if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure) && !string.IsNullOrWhiteSpace(server))
                         {

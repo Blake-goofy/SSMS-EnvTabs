@@ -47,6 +47,7 @@
   <ItemGroup>
     <Compile Include="CheckUpdatesCommand.cs" />
     <Compile Include="ColorByRegexConfigWriter.cs" />
+    <Compile Include="EditActiveConnectionRuleCommand.cs" />
     <Compile Include="EnvTabsLog.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="AutoConfigurationService.cs" />

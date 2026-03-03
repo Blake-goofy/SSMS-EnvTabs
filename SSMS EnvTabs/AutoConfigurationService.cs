@@ -29,7 +29,7 @@ namespace SSMS_EnvTabs
             public string Database { get; set; }
             public bool UseDb { get; set; }
             public string GroupName { get; set; }
-            public int ColorIndex { get; set; }
+            public int? ColorIndex { get; set; }
         }
 
         public static void ClearSuppressed()
@@ -102,150 +102,159 @@ namespace SSMS_EnvTabs
             else
             {
                 // Use configured style
-                string serverPart = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : server;
+                string rawServerPart = server ?? "";
+                string aliasPart = !string.IsNullOrWhiteSpace(existingAlias) ? existingAlias : rawServerPart;
                 string dbPart = (useDb && !string.IsNullOrWhiteSpace(database)) ? database : "";
                 
                 suggestedName = style
-                    .Replace("[server]", serverPart)
+                    .Replace("[server]", rawServerPart)
+                    .Replace("[serverAlias]", aliasPart)
                     .Replace("[db]", dbPart);
             }
             
             EnvTabsLog.Info($"AutoConfig: Proposing new rule for {connectionKey}. Color={nextColor}, Name={suggestedName}, Prompt={config.Settings.EnableConfigurePrompt}");
-            
-            // Step 1: ALWAYS Create and Save the rule immediately
-            var context = new AddRuleContext
-            {
-                Config = config,
-                Server = server,
-                Database = database,
-                UseDb = useDb,
-                GroupName = suggestedName,
-                ColorIndex = nextColor
-            };
 
-            var newRule = AddRuleAndSave(context);
-            
-            // Mark as suppressed immediately so we don't re-enter if RDT events fire again while dialog is open or after
+            // Suppress immediately so we don't re-enter if RDT events fire while the dialog is open.
             suppressedConnections.Add(connectionKey);
 
-            // Silent mode enabled? Or Prompt?
-            if (config.Settings.EnableConfigurePrompt)
+            if (!config.Settings.EnableConfigurePrompt)
             {
-                try
+                // Silent mode: save the rule immediately with the suggested defaults.
+                var silentContext = new AddRuleContext
                 {
-                    EnvTabsLog.Info("AutoConfig: Opening prompt dialog...");
-                    // Step 2: Prompt to edit the JUST CREATED rule
-                    // We use newRule.ColorIndex because AddRuleAndSave might have adjusted it if we add more logic, 
-                    // but currently it just uses what we passed.
-                    
-                    var usedColorIndexes = new HashSet<int>(
-                        config.ConnectionGroups
-                            .Where(r => !ReferenceEquals(r, newRule))
-                            .Select(r => r.ColorIndex));
+                    Config = config,
+                    Server = server,
+                    Database = database,
+                    UseDb = useDb,
+                    GroupName = suggestedName,
+                    ColorIndex = nextColor
+                };
+                AddRuleAndSave(silentContext);
+                return;
+            }
 
-                    var dialogOptions = new NewRuleDialog.NewRuleDialogOptions
+            // Prompt mode: show the dialog BEFORE saving any rule so that tabs are
+            // not renamed or colored until the user explicitly clicks Save.
+            try
+            {
+                EnvTabsLog.Info("AutoConfig: Opening prompt dialog...");
+
+                var usedColorIndexes = new HashSet<int>(
+                    config.ConnectionGroups
+                        .Where(r => r != null && r.ColorIndex.HasValue)
+                        .Select(r => r.ColorIndex.Value));
+
+                var dialogOptions = new NewRuleDialog.NewRuleDialogOptions
+                {
+                    Server = server,
+                    Database = !useDb ? null : database,
+                    SuggestedName = suggestedName,
+                    SuggestedGroupNameStyle = config.Settings?.SuggestedGroupNameStyle,
+                    SuggestedColorIndex = nextColor,
+                    ExistingAlias = enableAutoRename ? existingAlias : null,
+                    HideDatabaseRow = !useDb,
+                    HideAliasStep = !enableAutoRename || !enableAliasPrompt,
+                    HideGroupNameRow = !enableAutoRename,
+                    UsedColorIndexes = usedColorIndexes
+                };
+
+                using (var dlg = new NewRuleDialog(dialogOptions))
+                {
+                    // When the user clicks Next on the alias step, persist the alias right away
+                    // so it is available even if the user later cancels the rule step.
+                    dlg.AliasConfirmed += (serverAlias) =>
                     {
-                        Server = server,
-                        Database = !useDb ? null : database,
-                        SuggestedName = suggestedName,
-                        SuggestedGroupNameStyle = config.Settings?.SuggestedGroupNameStyle,
-                        SuggestedColorIndex = nextColor,
-                        ExistingAlias = enableAutoRename ? existingAlias : null,
-                        HideDatabaseRow = !useDb,
-                        HideAliasStep = !enableAutoRename || !enableAliasPrompt,
-                        HideGroupNameRow = !enableAutoRename,
-                        UsedColorIndexes = usedColorIndexes
+                        if (enableAutoRename && !string.IsNullOrWhiteSpace(serverAlias))
+                        {
+                            config.ServerAliases[server] = serverAlias;
+                            SaveConfig(config);
+                            EnvTabsLog.Info($"AutoConfig: Server alias saved on Next: '{server}' -> '{serverAlias}'");
+                        }
                     };
 
-                    using (var dlg = new NewRuleDialog(dialogOptions))
+                    var result = dlg.ShowDialog();
+                    EnvTabsLog.Info($"AutoConfig: Dialog result = {result}");
+                    bool changesApplied = false;
+                    int? resultingColorIndex = null;
+                    TabGroupRule newRule = null;
+
+                    if (result == DialogResult.OK || result == DialogResult.Yes)
                     {
-                        // To avoid "Color goes away" on Cancel:
-                        // We must ensure that we DO NOT trigger a save/write if canceled.
-                        // And we should ensure the initial save was enough.
-                        
-                        var result = dlg.ShowDialog();
-                        EnvTabsLog.Info($"AutoConfig: Dialog result = {result}");
-                        bool changesApplied = false;
-                        int resultingColorIndex = newRule.ColorIndex;
+                        string updatedName = dlg.RuleName;
+                        int? updatedColor = dlg.SelectedColorIndex;
+                        resultingColorIndex = updatedColor;
 
-                        if (result == DialogResult.OK || result == DialogResult.Yes) 
+                        // Alias may already be saved from AliasConfirmed, but update in case the
+                        // user went straight to the rule step (HideAliasStep = true).
+                        if (enableAutoRename && enableAliasPrompt && !string.IsNullOrWhiteSpace(dlg.ServerAlias)
+                            && !string.Equals(dlg.ServerAlias, existingAlias, StringComparison.Ordinal))
                         {
-                            string updatedName = string.IsNullOrWhiteSpace(dlg.RuleName) ? newRule.GroupName : dlg.RuleName;
-                            int updatedColor = dlg.SelectedColorIndex;
-                            resultingColorIndex = updatedColor;
+                            config.ServerAliases[server] = dlg.ServerAlias;
+                        }
 
-                            bool configChanged = false;
+                        var context = new AddRuleContext
+                        {
+                            Config = config,
+                            Server = server,
+                            Database = database,
+                            UseDb = useDb,
+                            GroupName = updatedName,
+                            ColorIndex = updatedColor
+                        };
+                        newRule = AddRuleAndSave(context);
+                        changesApplied = true;
 
-                            if (enableAutoRename)
-                            {
-                                // Update Alias if new
-                                if (enableAliasPrompt && !string.IsNullOrWhiteSpace(dlg.ServerAlias) && 
-                                    (!string.Equals(dlg.ServerAlias, existingAlias, StringComparison.Ordinal)))
-                                {
-                                    config.ServerAliases[server] = dlg.ServerAlias;
-                                    configChanged = true;
-                                }
+                        if (result == DialogResult.Yes)
+                        {
+                            OpenConfigInEditor();
+                        }
+                    }
+                    else if (result == DialogResult.Cancel)
+                    {
+                        // Save a silent null rule to suppress future auto-configure prompts
+                        // for this connection without renaming or coloring the tab.
+                        var silentContext = new AddRuleContext
+                        {
+                            Config = config,
+                            Server = server,
+                            Database = database,
+                            UseDb = useDb,
+                            GroupName = null,
+                            ColorIndex = null
+                        };
+                        newRule = AddRuleAndSave(silentContext);
+                        changesApplied = true;
+                    }
 
-                                // User wants to change rule name/color
-                                if (updatedName != newRule.GroupName || updatedColor != newRule.ColorIndex)
-                                {
-                                    newRule.GroupName = updatedName;
-                                    newRule.ColorIndex = updatedColor;
-                                    configChanged = true;
-                                }
-                            }
-                            else
-                            {
-                                // Color-only mode: only update color
-                                if (updatedColor != newRule.ColorIndex)
-                                {
-                                    newRule.ColorIndex = updatedColor;
-                                    configChanged = true;
-                                }
-                            }
-                            
-                            if (configChanged)
-                            {
-                                SaveConfig(config);
-                                changesApplied = true;
-                            }
-                             
-                            if (result == DialogResult.Yes)
+                    if (enableColorWarning && result == DialogResult.OK && newRule != null)
+                    {
+                        if (resultingColorIndex.HasValue && IsColorUsedByOtherRule(config, newRule, resultingColorIndex.Value))
+                        {
+                            var choice = MessageBox.Show(
+                                "This color is already assigned to another connection group. Open the config to resolve?",
+                                "SSMS EnvTabs",
+                                MessageBoxButtons.YesNo,
+                                MessageBoxIcon.Warning);
+
+                            if (choice == DialogResult.Yes)
                             {
                                 OpenConfigInEditor();
                             }
                         }
-
-                        if (enableColorWarning && (result == DialogResult.OK || result == DialogResult.Cancel))
-                        {
-                            if (IsColorUsedByOtherRule(config, newRule, resultingColorIndex))
-                            {
-                                var choice = MessageBox.Show(
-                                    "This color is already assigned to another connection group. Open the config to resolve?",
-                                    "SSMS EnvTabs",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Warning);
-
-                                if (choice == DialogResult.Yes)
-                                {
-                                    OpenConfigInEditor();
-                                }
-                            }
-                        }
-
-                        DialogClosed?.Invoke(new DialogClosedInfo
-                        {
-                            Result = result,
-                            Server = server,
-                            Database = database,
-                            ChangesApplied = changesApplied
-                        });
                     }
+
+                    DialogClosed?.Invoke(new DialogClosedInfo
+                    {
+                        Result = result,
+                        Server = server,
+                        Database = database,
+                        ChangesApplied = changesApplied
+                    });
                 }
-                catch (System.Exception ex)
-                {
-                    EnvTabsLog.Error($"AutoConfig: Error showing prompt: {ex}");
-                }
+            }
+            catch (System.Exception ex)
+            {
+                EnvTabsLog.Error($"AutoConfig: Error showing prompt: {ex}");
             }
         }
 
@@ -320,7 +329,7 @@ namespace SSMS_EnvTabs
             // Requirement 1: "First available" - find a color not currently used.
             // Requirement 2: Strict "Fill the gap" logic without jumping.
             
-            var used = new HashSet<int>(config.ConnectionGroups.Select(x => x.ColorIndex));
+            var used = new HashSet<int>(config.ConnectionGroups.Where(x => x.ColorIndex.HasValue).Select(x => x.ColorIndex.Value));
             
             // Find first hole in 0-15
             for (int i = 0; i <= 15; i++)

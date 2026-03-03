@@ -20,9 +20,10 @@ namespace SSMS_EnvTabs
     public sealed class NewRuleDialog : DialogWindow, IDisposable
     {
         public string RuleName { get; private set; }
-        public int SelectedColorIndex { get; private set; }
+        public int? SelectedColorIndex { get; private set; }
         public bool OpenConfigRequested { get; private set; }
         public string ServerAlias { get; private set; }
+        public event Action<string> AliasConfirmed;
 
         private TextBox txtName;
         private ComboBox cmbColor;
@@ -51,13 +52,14 @@ namespace SSMS_EnvTabs
         private readonly string suggestedGroupNameStyle;
         private readonly bool hideAliasStep;
         private readonly bool hideGroupNameRow;
+        private readonly bool isEditMode;
         private readonly HashSet<int> usedColorIndexes;
 
         private WinFormsDialogResult dialogResult = WinFormsDialogResult.Cancel;
 
         private sealed class ColorItem
         {
-            public int Index { get; set; }
+            public int? Index { get; set; }
             public string Name { get; set; }
             public Color SwatchColor { get; set; }
             public string DisplayName { get; set; }
@@ -66,6 +68,7 @@ namespace SSMS_EnvTabs
 
         private static readonly List<ColorItem> ColorList = new List<ColorItem>
         {
+            new ColorItem { Index = null, Name = "None", SwatchColor = Colors.Transparent },
             new ColorItem { Index = 0, Name = "Lavender", SwatchColor = (Color)ColorConverter.ConvertFromString("#9083ef") },
             new ColorItem { Index = 1, Name = "Gold", SwatchColor = (Color)ColorConverter.ConvertFromString("#d0b132") },
             new ColorItem { Index = 2, Name = "Cyan", SwatchColor = (Color)ColorConverter.ConvertFromString("#30b1cd") },
@@ -90,11 +93,12 @@ namespace SSMS_EnvTabs
             public string Database { get; set; }
             public string SuggestedName { get; set; }
             public string SuggestedGroupNameStyle { get; set; }
-            public int SuggestedColorIndex { get; set; }
+            public int? SuggestedColorIndex { get; set; }
             public string ExistingAlias { get; set; }
             public bool HideDatabaseRow { get; set; }
             public bool HideAliasStep { get; set; }
             public bool HideGroupNameRow { get; set; }
+            public bool IsEditMode { get; set; }
             public IEnumerable<int> UsedColorIndexes { get; set; }
         }
 
@@ -109,11 +113,13 @@ namespace SSMS_EnvTabs
             suggestedGroupNameStyle = options.SuggestedGroupNameStyle;
             hideAliasStep = options.HideAliasStep;
             hideGroupNameRow = options.HideGroupNameRow;
+            isEditMode = options.IsEditMode;
             usedColorIndexes = new HashSet<int>(options.UsedColorIndexes ?? Enumerable.Empty<int>());
 
             RuleName = options.SuggestedName;
             SelectedColorIndex = options.SuggestedColorIndex;
             ServerAlias = options.ExistingAlias ?? options.Server;
+
 
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             ResizeMode = ResizeMode.NoResize;
@@ -757,10 +763,10 @@ namespace SSMS_EnvTabs
             };
             btnSave.Click += (s, e) =>
             {
-                RuleName = txtName != null ? txtName.Text : suggestedName;
+                RuleName = txtName != null ? (string.IsNullOrWhiteSpace(txtName.Text) ? null : txtName.Text.Trim()) : suggestedName;
                 if (cmbColor.SelectedItem is ColorItem item)
                 {
-                    SelectedColorIndex = item.Index;
+                    SelectedColorIndex = item.Index; // null for the "None" item
                 }
                 dialogResult = WinFormsDialogResult.OK;
                 this.DialogResult = true;
@@ -776,6 +782,10 @@ namespace SSMS_EnvTabs
             };
             btnCancel.Click += (s, e) =>
             {
+                // Cancel means "I know about this connection but don't want to rename or color it".
+                // We set null values so AutoConfigurationService can save a silent rule.
+                RuleName = null;
+                SelectedColorIndex = null;
                 dialogResult = WinFormsDialogResult.Cancel;
                 this.DialogResult = false;
             };
@@ -789,10 +799,10 @@ namespace SSMS_EnvTabs
             };
             btnOpenConfig.Click += (s, e) =>
             {
-                RuleName = txtName != null ? txtName.Text : suggestedName;
+                RuleName = txtName != null ? (string.IsNullOrWhiteSpace(txtName.Text) ? null : txtName.Text.Trim()) : suggestedName;
                 if (cmbColor.SelectedItem is ColorItem item)
                 {
-                    SelectedColorIndex = item.Index;
+                    SelectedColorIndex = item.Index; // null for the "None" item
                 }
                 OpenConfigRequested = true;
                 dialogResult = WinFormsDialogResult.Yes;
@@ -825,6 +835,7 @@ namespace SSMS_EnvTabs
             btnNext.Click += (s, e) =>
             {
                 ServerAlias = string.IsNullOrWhiteSpace(txtAlias.Text) ? serverName : txtAlias.Text.Trim();
+                AliasConfirmed?.Invoke(ServerAlias);
                 ShowRuleStep();
             };
 
@@ -868,17 +879,17 @@ namespace SSMS_EnvTabs
 
         private void ShowRuleStep()
         {
-            Title = "SSMS EnvTabs - New Rule";
+            Title = isEditMode ? "SSMS EnvTabs - Edit Rule" : "SSMS EnvTabs - New Rule";
             panelAlias.Visibility = Visibility.Collapsed;
             panelRule.Visibility = Visibility.Visible;
             panelAliasButtons.Visibility = Visibility.Collapsed;
             panelRuleButtons.Visibility = Visibility.Visible;
 
-            if (!hideGroupNameRow && txtName != null)
+            if (!isEditMode && !hideGroupNameRow && txtName != null)
             {
-                string expectedWithServer = BuildSuggestedGroupName(serverName, databaseName);
-                string expectedWithExistingAlias = BuildSuggestedGroupName(string.IsNullOrWhiteSpace(existingAlias) ? serverName : existingAlias, databaseName);
-                string expectedWithAlias = BuildSuggestedGroupName(string.IsNullOrWhiteSpace(ServerAlias) ? serverName : ServerAlias, databaseName);
+                string expectedWithServer = BuildSuggestedGroupName(serverName, serverName, databaseName);
+                string expectedWithExistingAlias = BuildSuggestedGroupName(serverName, string.IsNullOrWhiteSpace(existingAlias) ? serverName : existingAlias, databaseName);
+                string expectedWithAlias = BuildSuggestedGroupName(serverName, string.IsNullOrWhiteSpace(ServerAlias) ? serverName : ServerAlias, databaseName);
 
                 bool matchesSuggested = string.IsNullOrWhiteSpace(txtName.Text)
                     || string.Equals(txtName.Text, expectedWithServer, StringComparison.OrdinalIgnoreCase)
@@ -932,15 +943,17 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private string BuildSuggestedGroupName(string serverValue, string databaseValue)
+        private string BuildSuggestedGroupName(string serverValue, string serverAliasValue, string databaseValue)
         {
             string serverPart = serverValue ?? string.Empty;
+            string aliasPart = !string.IsNullOrEmpty(serverAliasValue) ? serverAliasValue : serverPart;
             string dbPart = databaseValue ?? string.Empty;
 
             if (!string.IsNullOrWhiteSpace(suggestedGroupNameStyle))
             {
                 return suggestedGroupNameStyle
                     .Replace("[server]", serverPart)
+                    .Replace("[serverAlias]", aliasPart)
                     .Replace("[db]", dbPart);
             }
 
@@ -952,14 +965,15 @@ namespace SSMS_EnvTabs
             return $"{serverPart} {dbPart}";
         }
 
-        private List<ColorItem> BuildOrderedColorList(int suggestedColorIndex)
+        private List<ColorItem> BuildOrderedColorList(int? suggestedColorIndex)
         {
             var orderedList = new List<ColorItem>();
             var suggestedItem = ColorList.FirstOrDefault(c => c.Index == suggestedColorIndex);
 
             foreach (var item in ColorList)
             {
-                item.DisplayName = usedColorIndexes.Contains(item.Index) ? $"{item.Name} (used)" : item.Name;
+                bool isUsed = item.Index.HasValue && usedColorIndexes.Contains(item.Index.Value);
+                item.DisplayName = isUsed ? $"{item.Name} (used)" : item.Name;
             }
 
             if (suggestedItem != null)
