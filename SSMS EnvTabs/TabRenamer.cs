@@ -28,6 +28,12 @@ namespace SSMS_EnvTabs
         // Stores the caption of each tab captured before we first rename it, so it can be restored on cancel/rule-removal.
         private static readonly Dictionary<uint, string> OriginalCaptionByCookie =
             new Dictionary<uint, string>();
+        // Stores the pure user-given name (suffix and .sql stripped) captured the first time we rename a
+        // non-default temp-file tab, so subsequent poll cycles use the stable original name as the
+        // filename token instead of re-deriving it from an already-renamed caption (which would cause
+        // the group suffix to be appended repeatedly).
+        private static readonly Dictionary<uint, string> CookieToOriginalPureName =
+            new Dictionary<uint, string>();
 
         // Matches SSMS's built-in sequential caption for new unsaved queries, e.g. "SQLQuery1".
         // After .sql is stripped this is the only form we need to match.
@@ -40,6 +46,7 @@ namespace SSMS_EnvTabs
             CookieToAssignment.Remove(cookie);
             CookieToSsmsSuffix.Remove(cookie);
             OriginalCaptionByCookie.Remove(cookie);
+            CookieToOriginalPureName.Remove(cookie);
         }
 
         /// <summary>
@@ -59,6 +66,7 @@ namespace SSMS_EnvTabs
             CookieToSsmsSuffix.Remove(cookie);
             OriginalCaptionByCookie.TryGetValue(cookie, out string originalCaption);
             OriginalCaptionByCookie.Remove(cookie);
+            CookieToOriginalPureName.Remove(cookie);
 
             if (frame == null || string.IsNullOrWhiteSpace(originalCaption))
             {
@@ -183,6 +191,33 @@ namespace SSMS_EnvTabs
                         || SsmsDefaultQueryCaptionRegex.IsMatch(pureName)
                         || string.Equals(pureName, generatedDefault, StringComparison.OrdinalIgnoreCase)
                         || (!string.IsNullOrEmpty(monikerBase) && string.Equals(pureName, monikerBase, StringComparison.OrdinalIgnoreCase));
+
+                    if (!isDefault)
+                    {
+                        // Use the pure name captured the very first time we processed this tab so that
+                        // subsequent poll cycles don't re-derive it from an already-renamed caption
+                        // (which would cause the group suffix to be appended repeatedly, e.g.
+                        // "test ILS" -> "test ILS ILS" -> ...).
+                        //
+                        // If the stored pure name exists, check whether the current caption still matches
+                        // what we'd produce from it. If not, the user has manually renamed the tab again,
+                        // so update the stored name to reflect their new choice.
+                        if (CookieToOriginalPureName.TryGetValue(tab.Cookie, out string storedPureName))
+                        {
+                            string expectedCaption = BuildSavedStyleCaption(effectiveSavedStyle, storedPureName, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database);
+                            if (!string.Equals(pureName, storedPureName, StringComparison.OrdinalIgnoreCase)
+                                && !string.Equals(pureName, expectedCaption, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // User has set a new caption — treat that as the new base name.
+                                CookieToOriginalPureName[tab.Cookie] = pureName;
+                            }
+                        }
+                        else
+                        {
+                            CookieToOriginalPureName[tab.Cookie] = pureName;
+                        }
+                        pureName = CookieToOriginalPureName[tab.Cookie];
+                    }
 
                     newCaption = isDefault
                         ? generatedDefault
