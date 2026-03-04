@@ -180,8 +180,7 @@ namespace SSMS_EnvTabs
 
                     string generatedDefault = renameStyle
                         .Replace("[groupName]", assignment.GroupName)
-                        .Replace("[#]", assignment.Index.ToString())
-                        .Replace("#", assignment.Index.ToString());
+                        .Replace("[#]", assignment.Index.ToString());
 
                     // When SSMS caption options (server/DB suffix) are disabled, the caption is just
                     // the raw temp filename (e.g. "5tekxtn0") instead of "SQLQuery1". Treat that as
