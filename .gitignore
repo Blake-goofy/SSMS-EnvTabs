@@ -1,6 +1,5 @@
 .vs
 .vscode
-dev
 bin/
 obj/
 *.user

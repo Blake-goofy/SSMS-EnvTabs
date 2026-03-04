@@ -289,14 +289,18 @@ namespace SSMS_EnvTabs
         /// </summary>
         private static string GetPureName(string rawCaption, string ssmsSuffix, bool enableRemoveDotSql)
         {
-            string caption = StripSqlExtension(StripDirtyIndicators(rawCaption), enableRemoveDotSql);
+            string caption = StripDirtyIndicators(rawCaption);
             if (string.IsNullOrEmpty(caption)) return "";
 
+            // Strip the SSMS suffix first so that a .sql embedded before it (e.g. "test.sql - SERVER")
+            // ends up at the tail of the string before we try to remove it.
             if (!string.IsNullOrEmpty(ssmsSuffix))
             {
                 while (caption.EndsWith(ssmsSuffix, StringComparison.OrdinalIgnoreCase))
                     caption = caption.Substring(0, caption.Length - ssmsSuffix.Length).TrimEnd();
             }
+
+            caption = StripSqlExtension(caption, enableRemoveDotSql);
 
             return caption;
         }
@@ -337,7 +341,10 @@ namespace SSMS_EnvTabs
                 return name;
             }
 
-            return Regex.Replace(name, @"\.sql", "", RegexOptions.IgnoreCase);
+            // Anchor to end-of-string so that a .sql embedded in the middle of an already-renamed
+            // caption (e.g. "test.sql ILS") is not incorrectly stripped, which would cause the
+            // rename loop to corrupt the stored pure name on every poll cycle.
+            return Regex.Replace(name, @"\.sql$", "", RegexOptions.IgnoreCase);
         }
 
         private static string BuildSavedStyleCaption(string savedStyle, string filenameToken, string groupName, string server, string serverAlias, string database)

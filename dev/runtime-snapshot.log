@@ -1,0 +1,60 @@
+2026-03-03 15:53:56.264 [INFO] RenameRetry: Reason=FirstDocumentLock, Cookie=4, Attempt=1
+2026-03-03 15:53:56.264 [INFO] [Rename] cookie=4 pureName='yobrrv22.' isDefault=True -> '25QA ILS'
+2026-03-03 15:53:56.264 [INFO] Renamed (VSFPROPID_OwnerCaption): cookie=4, 'yobrrv22..sql' -> '25QA ILS'
+2026-03-03 15:53:56.266 [INFO] Renamed tab. Reason=FirstDocumentLock:Retry#1, Cookie=4, Server='JASSCALEQASQL01', DB='ILS', Count=1
+2026-03-03 15:53:56.266 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:53:56.266 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:53:56.266 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:53:56.266 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - Writing file 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt' (attempt 1/6).
+2026-03-03 15:53:56.280 [INFO] CaptionPoll: Detected caption change. Cookie=4, Caption='25QA ILS'
+2026-03-03 15:53:56.280 [INFO] [Rename] cookie=4 pureName='25QA ILS' isDefault=True -> '25QA ILS'
+2026-03-03 15:53:56.280 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:53:56.280 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:53:56.282 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:53:56.282 [INFO] [Rename] cookie=4 pureName='25QA ILS' isDefault=True -> '25QA ILS'
+2026-03-03 15:53:56.282 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'.
+2026-03-03 15:53:56.282 [INFO] [Rename] cookie=4 pureName='25QA ILS' isDefault=True -> '25QA ILS'
+2026-03-03 15:54:05.964 [INFO] CaptionPoll: Detected caption change. Cookie=4, Caption='test.sql'
+2026-03-03 15:54:05.964 [INFO] [Rename] cookie=4 pureName='test' isDefault=False -> 'test.sql ILS'
+2026-03-03 15:54:05.964 [INFO] Renamed (VSFPROPID_OwnerCaption): cookie=4, 'test.sql' -> 'test.sql ILS'
+2026-03-03 15:54:05.966 [INFO] Renamed tab. Reason=CaptionPoll, Cookie=4, Server='JASSCALEQASQL01', DB='ILS', Count=1
+2026-03-03 15:54:05.966 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:54:05.966 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:54:05.966 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:54:05.966 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'.
+2026-03-03 15:54:06.961 [INFO] CaptionPoll: Detected caption change. Cookie=4, Caption='test.sql ILS'
+2026-03-03 15:54:06.961 [INFO] [Rename] cookie=4 pureName='test ILS' isDefault=False -> 'test ILS.sql ILS'
+2026-03-03 15:54:06.961 [INFO] Renamed (VSFPROPID_OwnerCaption): cookie=4, 'test.sql ILS' -> 'test ILS.sql ILS'
+2026-03-03 15:54:06.963 [INFO] Renamed tab. Reason=CaptionPoll, Cookie=4, Server='JASSCALEQASQL01', DB='ILS', Count=1
+2026-03-03 15:54:06.963 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:54:06.963 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:54:06.963 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:54:06.963 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'.
+2026-03-03 15:54:07.975 [INFO] CaptionPoll: Detected caption change. Cookie=4, Caption='test ILS.sql ILS'
+2026-03-03 15:54:07.975 [INFO] [Rename] cookie=4 pureName='test ILS ILS' isDefault=False -> 'test ILS ILS.sql ILS'
+2026-03-03 15:54:07.975 [INFO] Renamed (VSFPROPID_OwnerCaption): cookie=4, 'test ILS.sql ILS' -> 'test ILS ILS.sql ILS'
+2026-03-03 15:54:07.977 [INFO] Renamed tab. Reason=CaptionPoll, Cookie=4, Server='JASSCALEQASQL01', DB='ILS', Count=1
+2026-03-03 15:54:07.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:54:07.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:54:07.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:54:07.977 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'.
+2026-03-03 15:54:08.975 [INFO] CaptionPoll: Detected caption change. Cookie=4, Caption='test ILS ILS.sql ILS'
+2026-03-03 15:54:08.975 [INFO] [Rename] cookie=4 pureName='test ILS ILS ILS' isDefault=False -> 'test ILS ILS ILS.sql ILS'
+2026-03-03 15:54:08.975 [INFO] Renamed (VSFPROPID_OwnerCaption): cookie=4, 'test ILS ILS.sql ILS' -> 'test ILS ILS ILS.sql ILS'
+2026-03-03 15:54:08.977 [INFO] Renamed tab. Reason=CaptionPoll, Cookie=4, Server='JASSCALEQASQL01', DB='ILS', Count=1
+2026-03-03 15:54:08.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:54:08.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:54:08.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:54:08.977 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'.
+2026-03-03 15:54:09.975 [INFO] CaptionPoll: Detected caption change. Cookie=4, Caption='test ILS ILS ILS.sql ILS'
+2026-03-03 15:54:09.975 [INFO] [Rename] cookie=4 pureName='test ILS ILS ILS ILS' isDefault=False -> 'test ILS ILS ILS ILS.sql ILS'
+2026-03-03 15:54:09.975 [INFO] Renamed (VSFPROPID_OwnerCaption): cookie=4, 'test ILS ILS ILS.sql ILS' -> 'test ILS ILS ILS ILS.sql ILS'
+2026-03-03 15:54:09.975 [INFO] Renamed tab. Reason=CaptionPoll, Cookie=4, Server='JASSCALEQASQL01', DB='ILS', Count=1
+2026-03-03 15:54:09.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=1
+2026-03-03 15:54:09.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:54:09.977 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:54:09.977 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'.
+2026-03-03 15:54:10.776 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Rules=2, ManualRules=0, Docs=0
+2026-03-03 15:54:10.776 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt'
+2026-03-03 15:54:10.776 [INFO] ColorByRegexConfigWriter.cs::UpdateFromSnapshot - GroupToPaths=2
+2026-03-03 15:54:10.778 [INFO] ColorByRegexConfigWriter.cs::WriteIfChanged - Writing file 'C:\Users\blake\AppData\Local\Temp\e995ab70-a889-4b14-8061-5c669c7fb3de\ColorByRegexConfig.txt' (attempt 1/6).
