@@ -17,6 +17,7 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 
 ## Install
 Download the latest `.vsix` from [GitHub Releases](https://github.com/Blake-goofy/SSMS-EnvTabs/releases) and run the installer.
+Follow the set up guide from the [Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
 
 ### On-Demand Configuration
@@ -27,10 +28,11 @@ When you connect to a server or database that doesn't have a matching rule, EnvT
 
 ## Documentation
 
-Full documentation is available in the [GitHub Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
+Full documentation is available in the [Wiki](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki).
 
-- **[Installation](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Installation-Guide)**: Setup and requirements.
+- **[Installation](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki)**: Install and setup.
 - **[Configuration](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)**: Global settings and prompts.
+- **[Tab Appearance](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Appearance)**: In depth tab appearance guide.
 - **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)**: List of available colors (0-15).
 - **[How it Works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)**: Technical details.
 
