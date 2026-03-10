@@ -3,6 +3,7 @@
 A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatically names query tabs and leverages SSMS's native regex feature to color them based on server and database connections. Keep your production, QA, and development environments visually distinct and easily identifiable.
 
 ![SSMS EnvTabs Demo](images/tab-colors.png)
+> **Note:** This image shows tabs grouped by server *and* database. If you prefer grouping by server only, see `autoConfigure` in [Config Guide](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Configuration-Guide)
 
 ![SSMS Version](https://img.shields.io/badge/SSMS-22.0%2B-blue)
 ![.NET Framework](https://img.shields.io/badge/.NET-4.7.2%2B-purple)
