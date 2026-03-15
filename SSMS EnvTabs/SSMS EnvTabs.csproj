@@ -4,6 +4,9 @@
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -43,6 +46,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <CopyVsixExtensionFiles>False</CopyVsixExtensionFiles>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="CheckUpdatesCommand.cs" />
@@ -59,6 +63,11 @@
     <Compile Include="RdtEventManager.Config.cs" />
     <Compile Include="RdtEventManager.Documents.cs" />
     <Compile Include="RdtEventManager.Events.cs" />
+    <Compile Include="SettingsToolWindow.cs" />
+    <Compile Include="SettingsToolWindowControl.xaml.cs">
+      <DependentUpon>SettingsToolWindowControl.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="SsmsSettingsUpdater.cs" />
     <Compile Include="SSMS_EnvTabsPackage.cs" />
     <Compile Include="TabGroupConfigLoader.cs" />
@@ -72,6 +81,16 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <Page Include="SettingsToolWindowControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <XamlRuntime>Wpf</XamlRuntime>
+    </Page>
+    <Content Include="..\LICENSE">
+      <Link>LICENSE</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <VSIXSubPath></VSIXSubPath>
+    </Content>
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
@@ -94,10 +113,6 @@
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Xml" />
     <Reference Include="WindowsBase" />
-    <Reference Include="Microsoft.VisualStudio.PlatformUI">
-      <HintPath>$(VSToolsPath)\..\..\..\VisualStudioIntegration\Common\Assemblies\v4.0\Microsoft.VisualStudio.PlatformUI.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.0.32112.339" ExcludeAssets="runtime" NoWarn="NU1604" />

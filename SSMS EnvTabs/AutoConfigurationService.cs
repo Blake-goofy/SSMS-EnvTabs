@@ -264,7 +264,7 @@ namespace SSMS_EnvTabs
             var config = ctx.Config;
 
             // Check if we should remove the default example rule
-            var exampleRule = config.ConnectionGroups.FirstOrDefault(g => g.GroupName == "Example: Exact Match");
+            var exampleRule = config.ConnectionGroups.FirstOrDefault(g => g.GroupName == "AppServer MyDb");
             if (exampleRule != null)
             {
                 config.ConnectionGroups.Remove(exampleRule);
@@ -320,8 +320,10 @@ namespace SSMS_EnvTabs
         private static void OpenConfigInEditor()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            string path = TabGroupConfigLoader.GetUserConfigPath();
-            VsShellUtilities.OpenDocument(ServiceProvider.GlobalProvider, path);
+            OpenConfigCommand.OpenSettingsWindow(
+                OpenConfigCommand.TargetTabConnectionGroups,
+                highlightUpdateChecks: false,
+                forceReload: true);
         }
 
         private static int FindNextColorValues(TabGroupConfig config)

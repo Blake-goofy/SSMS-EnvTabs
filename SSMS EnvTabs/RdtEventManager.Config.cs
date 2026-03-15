@@ -278,8 +278,10 @@ namespace SSMS_EnvTabs
         private static void OpenConfigInEditor()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            string path = TabGroupConfigLoader.GetUserConfigPath();
-            VsShellUtilities.OpenDocument(ServiceProvider.GlobalProvider, path);
+            OpenConfigCommand.OpenSettingsWindow(
+                OpenConfigCommand.TargetTabConnectionGroups,
+                highlightUpdateChecks: false,
+                forceReload: true);
         }
 
         private static void SaveConfig(TabGroupConfig config)

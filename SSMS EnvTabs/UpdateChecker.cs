@@ -18,6 +18,7 @@ namespace SSMS_EnvTabs
     {
         private const string ReleasesApiUrl = "https://api.github.com/repos/Blake-goofy/SSMS-EnvTabs/releases/latest";
         private const string VsixId = "SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7";
+        private static int pendingStartupCheck;
 
         public static void ScheduleCheck(AsyncPackage package, TabGroupSettings settings)
         {
@@ -27,13 +28,35 @@ namespace SSMS_EnvTabs
                 return;
             }
 
+            Interlocked.Exchange(ref pendingStartupCheck, 1);
+            EnvTabsLog.Info("Update check deferred until first valid connected document is opened.");
+        }
+
+        internal static void NotifyConnectedDocument(AsyncPackage package, TabGroupSettings settings, string server, string database)
+        {
+            if (package == null || string.IsNullOrWhiteSpace(server))
+            {
+                return;
+            }
+
+            if (settings?.EnableUpdateChecks == false)
+            {
+                Interlocked.Exchange(ref pendingStartupCheck, 0);
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref pendingStartupCheck, 0, 1) != 1)
+            {
+                return;
+            }
+
             _ = package.JoinableTaskFactory.RunAsync(async () =>
             {
                 try
                 {
                     var token = package.DisposalToken;
-                    await Task.Delay(TimeSpan.FromSeconds(1), token);
-                    EnvTabsLog.Info("Update check scheduled.");
+                    await Task.Delay(TimeSpan.FromMilliseconds(900), token);
+                    EnvTabsLog.Info($"Update check resumed after first connected document. Server='{server}', Database='{database}'.");
                     await CheckForUpdatesAsync(package, token, showUpToDate: false);
                 }
                 catch (OperationCanceledException)
@@ -42,7 +65,7 @@ namespace SSMS_EnvTabs
                 }
                 catch (Exception ex)
                 {
-                    EnvTabsLog.Info($"Update check failed: {ex.Message}");
+                    EnvTabsLog.Info($"Deferred update check failed: {ex.Message}");
                 }
             });
         }
@@ -239,9 +262,11 @@ namespace SSMS_EnvTabs
 
             try
             {
-                TabGroupConfigLoader.EnsureDefaultConfigExists();
-                string configPath = TabGroupConfigLoader.GetUserConfigPath();
-                VsShellUtilities.OpenDocument(package, configPath);
+                OpenConfigCommand.OpenSettingsWindow(
+                    OpenConfigCommand.TargetTabSettings,
+                    highlightUpdateChecks: true,
+                    forceReload: false,
+                    package);
             }
             catch (Exception ex)
             {

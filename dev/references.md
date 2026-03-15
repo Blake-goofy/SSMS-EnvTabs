@@ -4,7 +4,7 @@ Open PowerShell, then:
 
 Install:
 ```powershell
-& "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" "C:\Users\blake\source\repos\SSMS EnvTabs\SSMS EnvTabs\bin\Debug\SSMS EnvTabs.vsix"
+& "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" "C:\Users\blake\source\repos\SSMS EnvTabs\SSMS EnvTabs\bin\release\SSMS EnvTabs.vsix"
 ```
 
 Reinstall:

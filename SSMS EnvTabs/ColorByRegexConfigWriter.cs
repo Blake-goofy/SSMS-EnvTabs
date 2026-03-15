@@ -45,9 +45,10 @@ namespace SSMS_EnvTabs
             lastRulesSnapshot = rules;
             lastManualRulesSnapshot = manualRules;
 
-            if (!firstDocSeenUtc.HasValue && lastDocsSnapshot.Count > 0)
+            if (!firstDocSeenUtc.HasValue && lastDocsSnapshot.Any(doc => !string.IsNullOrWhiteSpace(doc?.Server)))
             {
                 firstDocSeenUtc = DateTime.UtcNow;
+                EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - firstConnectedDocSeenUtc set to {firstDocSeenUtc:O}");
             }
 
             var safeRules = rules ?? Array.Empty<TabRuleMatcher.CompiledRule>();
@@ -797,7 +798,7 @@ namespace SSMS_EnvTabs
             {
                 if (!referenceUtc.HasValue)
                 {
-                    EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::TryScanTempForConfig - No firstDocSeenUtc; skipping temp scan.");
+                    EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::TryScanTempForConfig - No firstConnectedDocSeenUtc; skipping temp scan.");
                     return null;
                 }
 
@@ -815,12 +816,27 @@ namespace SSMS_EnvTabs
                     .OrderBy(d => d.CreatedUtc)
                     .ToList();
 
+                string fallbackCandidate = null;
+                DateTime fallbackLastWriteUtc = DateTime.MinValue;
+
                 foreach (var entry in dirs)
                 {
                     try
                     {
                         string candidate = Path.Combine(entry.Dir, "ColorByRegexConfig.txt");
                         bool fileExists = File.Exists(candidate);
+                        bool hasVersionFolder = fileExists && HasSiblingVFolder(candidate);
+
+                        if (fileExists)
+                        {
+                            DateTime candidateLastWriteUtc = File.GetLastWriteTimeUtc(candidate);
+                            bool preferAsFallback = hasVersionFolder || string.IsNullOrWhiteSpace(fallbackCandidate);
+                            if (preferAsFallback && candidateLastWriteUtc > fallbackLastWriteUtc)
+                            {
+                                fallbackLastWriteUtc = candidateLastWriteUtc;
+                                fallbackCandidate = candidate;
+                            }
+                        }
 
                         DateTime dirCreateUtc = entry.CreatedUtc;
                         double deltaSeconds = (dirCreateUtc - referenceUtc.Value).TotalSeconds;
@@ -839,7 +855,7 @@ namespace SSMS_EnvTabs
                         EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - FirstDocSeenUtc={referenceUtc:O}, RegexFolderCreateUtc={dirCreateUtc:O}, DeltaSeconds={deltaSeconds:0.###}, FileExists={fileExists}, Folder='{entry.Dir}'");
                         if (fileExists)
                         {
-                            if (HasSiblingVFolder(candidate))
+                            if (hasVersionFolder)
                             {
                                 return candidate;
                             }
@@ -852,6 +868,13 @@ namespace SSMS_EnvTabs
                         // Ignore access errors
                     }
                 }
+
+                if (!string.IsNullOrWhiteSpace(fallbackCandidate))
+                {
+                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - Strict creation-window match failed. Using latest valid temp config by last-write: '{fallbackCandidate}', LastWriteUtc={fallbackLastWriteUtc:O}");
+                    return fallbackCandidate;
+                }
+
                 EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - No candidate found. FirstDocSeenUtc={referenceUtc:O}");
                 return null;
             }
@@ -986,7 +1009,7 @@ namespace SSMS_EnvTabs
                 return false;
             }
 
-            if (name.Length < 2 || name[0] != 'v')
+            if (name.Length < 2 || char.ToLowerInvariant(name[0]) != 'v')
             {
                 return false;
             }

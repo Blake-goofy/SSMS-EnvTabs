@@ -41,8 +41,6 @@ namespace SSMS_EnvTabs
         private StackPanel panelAliasButtons;
 
         private TextBlock lblHeader;
-        private TextBlock lblServerValue;
-        private TextBlock lblDatabaseValue;
         private TextBlock lblAliasHeader;
 
         private readonly string serverName;

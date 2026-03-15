@@ -1,0 +1,552 @@
+<UserControl x:Class="SSMS_EnvTabs.SettingsToolWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="700"
+             d:DesignWidth="980"
+             Background="{DynamicResource EnvTabsBackgroundBrush}"
+             Foreground="{DynamicResource EnvTabsForegroundBrush}">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="EnvTabsBackgroundBrush" Color="White" />
+        <SolidColorBrush x:Key="EnvTabsForegroundBrush" Color="Black" />
+        <SolidColorBrush x:Key="EnvTabsBorderBrush" Color="#707070" />
+        <SolidColorBrush x:Key="EnvTabsLinkBrush" Color="#0067C0" />
+        <SolidColorBrush x:Key="EnvTabsToggleOnBrush" Color="#0067C0" />
+        <SolidColorBrush x:Key="EnvTabsButtonHoverBrush" Color="#F0F0F0" />
+        <SolidColorBrush x:Key="EnvTabsButtonHoverTextBrush" Color="#000000" />
+        <SolidColorBrush x:Key="EnvTabsButtonPressedBrush" Color="#E6E6E6" />
+        <SolidColorBrush x:Key="EnvTabsTabHeaderBackgroundBrush" Color="#F5F5F5" />
+        <SolidColorBrush x:Key="EnvTabsTabHeaderForegroundBrush" Color="#000000" />
+        <SolidColorBrush x:Key="EnvTabsTabHeaderHoverBrush" Color="#EBEBEB" />
+        <SolidColorBrush x:Key="EnvTabsTabHeaderSelectedBrush" Color="#E0E0E0" />
+
+        <Style x:Key="HeaderTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+        </Style>
+
+        <Style x:Key="SubheaderTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+            <Setter Property="Opacity" Value="0.78" />
+            <Setter Property="Margin" Value="0,0,0,0" />
+        </Style>
+
+        <Style x:Key="OptionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+        </Style>
+
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+            <Setter Property="Margin" Value="-6,20,0,8" />
+        </Style>
+
+        <Style x:Key="OptionDescriptionStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
+
+        <Style x:Key="SwitchToggleStyle" TargetType="CheckBox">
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Width="50" Height="24" Background="Transparent">
+                            <Border x:Name="Track"
+                                    CornerRadius="12"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource EnvTabsBorderBrush}"
+                                    Background="{DynamicResource EnvTabsBackgroundBrush}" />
+                            <Ellipse x:Name="Thumb"
+                                     Width="18"
+                                     Height="18"
+                                     Margin="3,0,0,0"
+                                     HorizontalAlignment="Left"
+                                     Fill="{DynamicResource EnvTabsForegroundBrush}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource EnvTabsToggleOnBrush}" />
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource EnvTabsToggleOnBrush}" />
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0" />
+                                <Setter TargetName="Thumb" Property="Fill" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Track" Property="Opacity" Value="0.45" />
+                                <Setter TargetName="Thumb" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="EnvTabsButtonBaseStyle" TargetType="Button">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource EnvTabsBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderHoverBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderSelectedBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsActionButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="InlineActionButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="MinWidth" Value="108" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
+
+        <Style x:Key="OptionRowGridStyle" TargetType="Grid">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="16,8,0,8" />
+        </Style>
+
+        <Style x:Key="OptionRowSeparatorStyle" TargetType="Separator">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Margin" Value="0,0,0,0" />
+            <Setter Property="Background" Value="{DynamicResource EnvTabsBorderBrush}" />
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+
+        <Style x:Key="StyleValueTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Margin" Value="0,8,0,0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource EnvTabsBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="IsReadOnly" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource EnvTabsBackgroundBrush}" />
+                </Trigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="IsReadOnly" Value="True" />
+                        <Condition Property="IsMouseOver" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource EnvTabsBackgroundBrush}" />
+                </MultiTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StyleEditButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Margin" Value="8,8,0,0" />
+            <Setter Property="MinWidth" Value="72" />
+        </Style>
+
+        <Style x:Key="TokenButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="MinWidth" Value="84" />
+        </Style>
+
+        <Style x:Key="CompactHeaderButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Padding" Value="10,2" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="MinWidth" Value="84" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+
+        <Style x:Key="CompactCardButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="EnvTabsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Background" Value="{DynamicResource EnvTabsTabHeaderBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsTabHeaderForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1,1,1,0"
+                                Padding="{TemplateBinding Padding}"
+                                Margin="0,0,4,0">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderSelectedBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Style="{StaticResource HeaderTextStyle}" Text="EnvTabs Settings" />
+                <TextBlock Style="{StaticResource SubheaderTextStyle}" Text="Configure core EnvTabs behavior. Click Open JSON in the top right to view all configurations." />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                <Button x:Name="OpenJsonButton"
+                        Content="Open JSON"
+                        Style="{StaticResource SettingsActionButtonStyle}"
+                        ToolTip="Open TabGroupConfig.json for advanced editing" />
+                <Button x:Name="ResetDefaultsButton"
+                    Content="Reset to default"
+                    Style="{StaticResource SettingsActionButtonStyle}"
+                    ToolTip="Reset settings on this page to default values" />
+                <Button x:Name="ReloadButton"
+                        Content="Reload"
+                        Style="{StaticResource SettingsActionButtonStyle}"
+                        ToolTip="Reload settings from TabGroupConfig.json" />
+            </StackPanel>
+        </Grid>
+
+        <TabControl x:Name="SettingsTabControl"
+                Grid.Row="1"
+                    Background="{DynamicResource EnvTabsBackgroundBrush}"
+                    Foreground="{DynamicResource EnvTabsForegroundBrush}"
+                    BorderBrush="{DynamicResource EnvTabsBorderBrush}"
+                BorderThickness="1"
+                ItemContainerStyle="{StaticResource EnvTabsTabItemStyle}">
+            <TabItem x:Name="GeneralSettingsTab" Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12,10,12,10" MaxWidth="820" HorizontalAlignment="Center">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="General" Margin="0,0,0,6" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="140" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Auto configure mode" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Choose how EnvTabs auto-creates matching rules for new connections." />
+                            </StackPanel>
+                            <ComboBox x:Name="AutoConfigureCombo"
+                                      Grid.Column="1"
+                                      Margin="0,2,0,2"
+                                      Padding="8,4"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      BorderBrush="{DynamicResource EnvTabsBorderBrush}"
+                                      Foreground="{DynamicResource EnvTabsForegroundBrush}"
+                                      Background="{DynamicResource EnvTabsBackgroundBrush}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Logging" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs writes runtime log entries for troubleshooting." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                <CheckBox x:Name="LoggingToggle" Style="{StaticResource SwitchToggleStyle}" HorizontalAlignment="Right" />
+                                <Button x:Name="CopyLogPathButton"
+                                        Content="Copy log path"
+                                        Style="{StaticResource InlineActionButtonStyle}"
+                                        ToolTip="Copy runtime.log path to clipboard" />
+                            </StackPanel>
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid x:Name="CheckUpdatesRowGrid" Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Check for updates" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs will check for latest release upon launch." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="UpdateChecksToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Tab appearance" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Auto rename query tabs" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs automatically renames query tabs using your configured naming style." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="AutoRenameToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Auto color tab groups" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs writes regex color configuration so SSMS applies group colors automatically." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="AutoColorToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Remove .sql from saved files" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs removes the .sql suffix from saved file names during tab rename formatting." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="RemoveDotSqlToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Prompts" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Show configure prompts" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs prompts to configure new connections when no matching group is found." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="ConfigurePromptToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Prompt for server aliases" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs suggests adding a friendly alias when a server has no alias configured." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="ServerAliasPromptToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="StyleTemplatesTab" Header="Style Templates">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12,10,12,10" MaxWidth="820" HorizontalAlignment="Center">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Style Templates" Margin="0,0,0,6" />
+                        <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Click Edit to modify a style and use [token] buttons for easy configuring." Margin="0,0,0,8" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Suggested Group Name Style" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SuggestedGroupNameStyleTextBox" Grid.Column="0" Style="{StaticResource StyleValueTextBoxStyle}" Margin="0,0,8,0" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="SuggestedGroupNameEditButton" Content="Edit" Style="{StaticResource StyleEditButtonStyle}" Click="StyleEditButton_Click" Margin="0,0,0,0" />
+                                        <Button x:Name="SuggestedGroupNameSaveButton" Content="Save" Style="{StaticResource StyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
+                                        <Button x:Name="SuggestedGroupNameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel x:Name="SuggestedGroupNameTokenPanel" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
+                                    <Button Content="[server]" Tag="[server]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Server name" />
+                                    <Button Content="[serverAlias]" Tag="[serverAlias]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Configured server alias" />
+                                    <Button Content="[db]" Tag="[db]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Database name" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="New Query Rename Style" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="NewQueryRenameStyleTextBox" Grid.Column="0" Style="{StaticResource StyleValueTextBoxStyle}" Margin="0,0,8,0" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="NewQueryRenameEditButton" Content="Edit" Style="{StaticResource StyleEditButtonStyle}" Click="StyleEditButton_Click" Margin="0,0,0,0" />
+                                        <Button x:Name="NewQueryRenameSaveButton" Content="Save" Style="{StaticResource StyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
+                                        <Button x:Name="NewQueryRenameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel x:Name="NewQueryRenameTokenPanel" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
+                                    <Button Content="[groupName]" Tag="[groupName]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Matched connection group name" />
+                                    <Button Content="[#]" Tag="[#]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Per-group query index" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Saved File Rename Style" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SavedFileRenameStyleTextBox" Grid.Column="0" Style="{StaticResource StyleValueTextBoxStyle}" Margin="0,0,8,0" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="SavedFileRenameEditButton" Content="Edit" Style="{StaticResource StyleEditButtonStyle}" Click="StyleEditButton_Click" Margin="0,0,0,0" />
+                                        <Button x:Name="SavedFileRenameSaveButton" Content="Save" Style="{StaticResource StyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
+                                        <Button x:Name="SavedFileRenameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel x:Name="SavedFileRenameTokenPanel" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
+                                    <Button Content="[filename]" Tag="[filename]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Saved file name" />
+                                    <Button Content="[groupName]" Tag="[groupName]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Matched connection group name" />
+                                    <Button Content="[server]" Tag="[server]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Server name" />
+                                    <Button Content="[serverAlias]" Tag="[serverAlias]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Configured server alias" />
+                                    <Button Content="[db]" Tag="[db]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Database name" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="ConnectionGroupsTab" Header="Connection Groups">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12,10,12,10" MaxWidth="860" HorizontalAlignment="Center">
+                        <StackPanel x:Name="ServerAliasSectionPanel">
+                            <Grid Style="{StaticResource OptionRowGridStyle}" Margin="0,0,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Server Aliases" Margin="0,0,0,6" />
+                                    <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Manage server name to alias mappings used by rename templates." Margin="0,0,0,8" />
+                                </StackPanel>
+                                <Button x:Name="AddServerAliasButton"
+                                        Grid.Column="1"
+                                        Content="Add alias"
+                                        Style="{StaticResource CompactHeaderButtonStyle}"
+                                        Margin="0,6,0,0" />
+                            </Grid>
+                            <StackPanel x:Name="ServerAliasRowsPanel" Margin="0,8,0,8" />
+                            <Separator Style="{StaticResource OptionRowSeparatorStyle}" Margin="0,8,0,8" />
+                        </StackPanel>
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}" Margin="0,0,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Connection Groups" Margin="0,0,0,6" />
+                                <TextBlock x:Name="ConnectionGroupsDescriptionText"
+                                           Style="{StaticResource OptionDescriptionStyle}"
+                                           Text="Each record maps server and optional database patterns to a group name and tab color."
+                                           Margin="0,0,0,8" />
+                            </StackPanel>
+                            <Button x:Name="AddConnectionGroupButton"
+                                    Grid.Column="1"
+                                    Content="Add group"
+                                    Style="{StaticResource CompactHeaderButtonStyle}"
+                                    Margin="0,6,0,0" />
+                        </Grid>
+
+                        <StackPanel x:Name="ConnectionGroupCardsPanel" Margin="0,4,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <TextBlock x:Name="StatusText"
+                       VerticalAlignment="Center"
+                       Style="{StaticResource SubheaderTextStyle}"
+                       Text="Ready" />
+        </Grid>
+    </Grid>
+</UserControl>

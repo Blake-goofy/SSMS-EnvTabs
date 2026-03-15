@@ -193,6 +193,12 @@ namespace SSMS_EnvTabs
             var rules = cachedRules ?? TabRuleMatcher.CompileRules(config);
             var manualRules = cachedManualRules ?? TabRuleMatcher.CompileManualRules(config);
 
+            if (frame != null && TryGetConnectionInfo(frame, out string observedServer, out string observedDatabase)
+                && !string.IsNullOrWhiteSpace(observedServer))
+            {
+                UpdateChecker.NotifyConnectedDocument(package, config.Settings, observedServer, observedDatabase);
+            }
+
             bool needsRetry = false;
             int renamedCount = 0;
             bool autoConfigTriggered = false;
