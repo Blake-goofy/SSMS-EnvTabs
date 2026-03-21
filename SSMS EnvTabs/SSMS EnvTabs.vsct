@@ -32,16 +32,6 @@
           <ToolTipText>Opens TabGroupConfig.json file</ToolTipText>
         </Strings>
       </Button>
-      <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidCheckUpdates" priority="0x0110" type="Button">
-        <Parent guid="guidSSMS_EnvTabsCmdSet" id="EnvTabsGroup" />
-        <Icon guid="ImageCatalogGuid" id="Upload" />
-        <CommandFlag>IconIsMoniker</CommandFlag>
-        <CommandFlag>IconAndText</CommandFlag>
-        <Strings>
-          <ButtonText>Update EnvTabs</ButtonText>
-          <ToolTipText>Check for update for EnvTabs</ToolTipText>
-        </Strings>
-      </Button>
       <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidEditActiveConnectionRule" priority="0x0120" type="Button">
         <Parent guid="guidSSMS_EnvTabsCmdSet" id="EnvTabsGroup" />
         <Icon guid="ImageCatalogGuid" id="Edit" />

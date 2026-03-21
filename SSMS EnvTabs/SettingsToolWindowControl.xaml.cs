@@ -28,6 +28,7 @@ namespace SSMS_EnvTabs
         private Button openJsonButton;
         private Button resetDefaultsButton;
         private Button reloadButton;
+        private Button updateEnvTabsButton;
         private Button copyLogPathButton;
         private TabControl settingsTabControl;
         private TabItem generalSettingsTab;
@@ -56,7 +57,11 @@ namespace SSMS_EnvTabs
         private StackPanel suggestedGroupNameTokenPanel;
         private StackPanel newQueryRenameTokenPanel;
         private StackPanel savedFileRenameTokenPanel;
+        private TextBlock suggestedGroupNameTokenHelpText;
+        private TextBlock newQueryRenameTokenHelpText;
+        private TextBlock savedFileRenameTokenHelpText;
         private StackPanel serverAliasSectionPanel;
+        private Grid serverAliasColumnHeaderGrid;
         private StackPanel serverAliasRowsPanel;
         private StackPanel connectionGroupCardsPanel;
         private TextBlock connectionGroupsDescriptionText;
@@ -72,6 +77,16 @@ namespace SSMS_EnvTabs
         private bool showGroupNameInConnectionCards = true;
         private string currentAutoConfigureMode = DefaultAutoConfigureValue;
         private int nextInlineRowId = 1;
+        private bool isThemeEventSubscribed;
+        private ServerAliasRowState activeAliasEditRow;
+        private TextBox activeAliasServerTextBox;
+        private TextBox activeAliasAliasTextBox;
+        private ConnectionGroupCardState activeConnectionGroupEditCard;
+        private TextBox activeConnectionGroupNameTextBox;
+        private TextBox activeConnectionServerTextBox;
+        private TextBox activeConnectionDatabaseTextBox;
+        private TextBox activeConnectionPriorityTextBox;
+        private ComboBox activeConnectionColorCombo;
 
         private enum EditableStyleField
         {
@@ -170,6 +185,7 @@ namespace SSMS_EnvTabs
             LoadView();
             Loaded += OnLoaded;
             IsVisibleChanged += OnIsVisibleChanged;
+            Unloaded += OnUnloaded;
         }
 
         private void LoadView()
@@ -180,6 +196,7 @@ namespace SSMS_EnvTabs
             openJsonButton = FindRequiredControl<Button>("OpenJsonButton");
             resetDefaultsButton = FindRequiredControl<Button>("ResetDefaultsButton");
             reloadButton = FindRequiredControl<Button>("ReloadButton");
+            updateEnvTabsButton = FindRequiredControl<Button>("UpdateEnvTabsButton");
             copyLogPathButton = FindRequiredControl<Button>("CopyLogPathButton");
             settingsTabControl = FindRequiredControl<TabControl>("SettingsTabControl");
             generalSettingsTab = FindRequiredControl<TabItem>("GeneralSettingsTab");
@@ -208,7 +225,11 @@ namespace SSMS_EnvTabs
             suggestedGroupNameTokenPanel = FindRequiredControl<StackPanel>("SuggestedGroupNameTokenPanel");
             newQueryRenameTokenPanel = FindRequiredControl<StackPanel>("NewQueryRenameTokenPanel");
             savedFileRenameTokenPanel = FindRequiredControl<StackPanel>("SavedFileRenameTokenPanel");
+            suggestedGroupNameTokenHelpText = FindRequiredControl<TextBlock>("SuggestedGroupNameTokenHelpText");
+            newQueryRenameTokenHelpText = FindRequiredControl<TextBlock>("NewQueryRenameTokenHelpText");
+            savedFileRenameTokenHelpText = FindRequiredControl<TextBlock>("SavedFileRenameTokenHelpText");
             serverAliasSectionPanel = FindRequiredControl<StackPanel>("ServerAliasSectionPanel");
+            serverAliasColumnHeaderGrid = FindRequiredControl<Grid>("ServerAliasColumnHeaderGrid");
             serverAliasRowsPanel = FindRequiredControl<StackPanel>("ServerAliasRowsPanel");
             connectionGroupCardsPanel = FindRequiredControl<StackPanel>("ConnectionGroupCardsPanel");
             connectionGroupsDescriptionText = FindRequiredControl<TextBlock>("ConnectionGroupsDescriptionText");
@@ -220,6 +241,7 @@ namespace SSMS_EnvTabs
             openJsonButton.Click += OpenJsonButton_Click;
             resetDefaultsButton.Click += ResetDefaultsButton_Click;
             reloadButton.Click += ReloadButton_Click;
+            updateEnvTabsButton.Click += UpdateEnvTabsButton_Click;
             copyLogPathButton.Click += CopyLogPathButton_Click;
             addServerAliasButton.Click += AddServerAliasButton_Click;
             addConnectionGroupButton.Click += AddConnectionGroupButton_Click;
@@ -233,7 +255,83 @@ namespace SSMS_EnvTabs
             WireToggle(serverAliasPromptToggle);
             WireToggle(updateChecksToggle);
             WireToggle(removeDotSqlToggle);
+            PreviewKeyDown += SettingsToolWindowControl_PreviewKeyDown;
             UpdateStyleEditUi();
+        }
+
+        private void SettingsToolWindowControl_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (e.Key != Key.Enter && e.Key != Key.Escape)
+            {
+                return;
+            }
+
+            bool handled = e.Key == Key.Enter
+                ? TryInvokePrimaryActionFromKeyboard()
+                : TryInvokeCancelActionFromKeyboard();
+
+            if (handled)
+            {
+                e.Handled = true;
+            }
+        }
+
+        private bool TryInvokePrimaryActionFromKeyboard()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (activeStyleEditField != EditableStyleField.None)
+            {
+                StyleSaveButton_Click(GetSaveButton(activeStyleEditField), new RoutedEventArgs());
+                return true;
+            }
+
+            if (activeAliasEditRow != null)
+            {
+                SaveServerAliasRow(activeAliasEditRow, activeAliasServerTextBox?.Text, activeAliasAliasTextBox?.Text);
+                return true;
+            }
+
+            if (activeConnectionGroupEditCard != null)
+            {
+                SaveConnectionGroupCard(
+                    activeConnectionGroupEditCard,
+                    ShouldShowGroupNameInConnectionCards() ? activeConnectionGroupNameTextBox?.Text : activeConnectionGroupEditCard.GroupName,
+                    activeConnectionServerTextBox?.Text,
+                    activeConnectionDatabaseTextBox?.Text,
+                    activeConnectionPriorityTextBox?.Text,
+                    activeConnectionColorCombo?.SelectedValue);
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryInvokeCancelActionFromKeyboard()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (activeStyleEditField != EditableStyleField.None)
+            {
+                StyleCancelButton_Click(GetCancelButton(activeStyleEditField), new RoutedEventArgs());
+                return true;
+            }
+
+            if (activeAliasEditRow != null)
+            {
+                CancelServerAliasEdit(activeAliasEditRow);
+                return true;
+            }
+
+            if (activeConnectionGroupEditCard != null)
+            {
+                CancelConnectionGroupEdit(activeConnectionGroupEditCard);
+                return true;
+            }
+
+            return false;
         }
 
         private void WireToggle(CheckBox toggle)
@@ -263,11 +361,17 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
 
             Loaded -= OnLoaded;
-            ApplyThemeBrushResources();
+            SubscribeToThemeChanges();
+            ApplyCurrentThemeAndRefreshUi(rebuildDynamicRows: false);
             InitializeAutoConfigureOptions();
             ApplyComboBoxPopupTheme(autoConfigureCombo);
             ApplyComboBoxTemplate(autoConfigureCombo);
             LoadFromConfig();
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            UnsubscribeFromThemeChanges();
         }
 
         private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -276,9 +380,54 @@ namespace SSMS_EnvTabs
 
             if (IsVisible)
             {
-                ApplyThemeBrushResources();
-                ApplyComboBoxPopupTheme(autoConfigureCombo);
-                ApplyComboBoxTemplate(autoConfigureCombo);
+                SubscribeToThemeChanges();
+                ApplyCurrentThemeAndRefreshUi(rebuildDynamicRows: true);
+            }
+        }
+
+        private void SubscribeToThemeChanges()
+        {
+            if (isThemeEventSubscribed)
+            {
+                return;
+            }
+
+            VSColorTheme.ThemeChanged += OnVsThemeChanged;
+            isThemeEventSubscribed = true;
+        }
+
+        private void UnsubscribeFromThemeChanges()
+        {
+            if (!isThemeEventSubscribed)
+            {
+                return;
+            }
+
+            VSColorTheme.ThemeChanged -= OnVsThemeChanged;
+            isThemeEventSubscribed = false;
+        }
+
+        private void OnVsThemeChanged(ThemeChangedEventArgs e)
+        {
+            ThreadHelper.JoinableTaskFactory.Run(async delegate
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ApplyCurrentThemeAndRefreshUi(rebuildDynamicRows: true);
+            });
+        }
+
+        private void ApplyCurrentThemeAndRefreshUi(bool rebuildDynamicRows)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            ApplyThemeBrushResources();
+            ApplyComboBoxPopupTheme(autoConfigureCombo);
+            ApplyComboBoxTemplate(autoConfigureCombo);
+
+            if (rebuildDynamicRows)
+            {
+                RebuildServerAliasRowsUi();
+                RebuildConnectionGroupCardsUi();
             }
         }
 
@@ -298,12 +447,26 @@ namespace SSMS_EnvTabs
             Color fgColor = GetBrushColor(fg, Colors.Black);
             bool isLightTheme = GetRelativeLuminance(bgColor) > 0.6;
 
-            Color buttonHoverColor = isLightTheme
-                ? BlendColors(bgColor, Colors.Black, 0.08)
-                : BlendColors(bgColor, Colors.Black, 0.10);
-            Color buttonPressedColor = isLightTheme
-                ? BlendColors(bgColor, Colors.Black, 0.14)
-                : BlendColors(bgColor, Colors.Black, 0.18);
+            Color neutralBaseColor = isLightTheme
+                ? BlendColors(bgColor, Colors.Black, 0.06)
+                : BlendColors(bgColor, Colors.White, 0.10);
+            Color neutralHoverColor = BlendColors(neutralBaseColor, Colors.Black, 0.06);
+            Color neutralPressedColor = BlendColors(neutralBaseColor, Colors.Black, 0.12);
+
+            Color accentColor = GetBrushColor(toggleOn, GetBrushColor(border, fgColor));
+            Color primaryHoverColor = BlendColors(accentColor, Colors.Black, 0.08);
+            Color primaryPressedColor = BlendColors(accentColor, Colors.Black, 0.16);
+            Color primaryTextColor = GetRelativeLuminance(accentColor) > 0.58 ? Colors.Black : Colors.White;
+
+            Color dangerBaseColor = GetBrushColor(
+                TryFindResource("EnvTabsButtonDangerBrush") as Brush,
+                (Color)ColorConverter.ConvertFromString("#B42318"));
+            Color dangerHoverColor = BlendColors(dangerBaseColor, Colors.Black, 0.08);
+            Color dangerPressedColor = BlendColors(dangerBaseColor, Colors.Black, 0.16);
+
+            Color tokenBaseColor = neutralBaseColor;
+            Color tokenHoverColor = neutralHoverColor;
+            Color tokenPressedColor = neutralPressedColor;
 
             Color tabHeaderColor = isLightTheme
                 ? BlendColors(bgColor, Colors.Black, 0.05)
@@ -320,9 +483,21 @@ namespace SSMS_EnvTabs
             Resources["EnvTabsBorderBrush"] = border;
             Resources["EnvTabsLinkBrush"] = link;
             Resources["EnvTabsToggleOnBrush"] = toggleOn;
-            Resources["EnvTabsButtonHoverBrush"] = new SolidColorBrush(buttonHoverColor);
+            Resources["EnvTabsButtonNeutralBrush"] = new SolidColorBrush(neutralBaseColor);
+            Resources["EnvTabsButtonNeutralHoverBrush"] = new SolidColorBrush(neutralHoverColor);
+            Resources["EnvTabsButtonNeutralPressedBrush"] = new SolidColorBrush(neutralPressedColor);
+            Resources["EnvTabsButtonPrimaryHoverBrush"] = new SolidColorBrush(primaryHoverColor);
+            Resources["EnvTabsButtonPrimaryPressedBrush"] = new SolidColorBrush(primaryPressedColor);
+            Resources["EnvTabsButtonPrimaryTextBrush"] = new SolidColorBrush(primaryTextColor);
+            Resources["EnvTabsButtonDangerHoverBrush"] = new SolidColorBrush(dangerHoverColor);
+            Resources["EnvTabsButtonDangerPressedBrush"] = new SolidColorBrush(dangerPressedColor);
+            Resources["EnvTabsButtonDangerTextBrush"] = new SolidColorBrush(dangerBaseColor);
+            Resources["EnvTabsTokenButtonBackgroundBrush"] = new SolidColorBrush(tokenBaseColor);
+            Resources["EnvTabsTokenButtonHoverBrush"] = new SolidColorBrush(tokenHoverColor);
+            Resources["EnvTabsTokenButtonPressedBrush"] = new SolidColorBrush(tokenPressedColor);
+            Resources["EnvTabsButtonHoverBrush"] = new SolidColorBrush(neutralHoverColor);
             Resources["EnvTabsButtonHoverTextBrush"] = new SolidColorBrush(fgColor);
-            Resources["EnvTabsButtonPressedBrush"] = new SolidColorBrush(buttonPressedColor);
+            Resources["EnvTabsButtonPressedBrush"] = new SolidColorBrush(neutralPressedColor);
             Resources["EnvTabsTabHeaderBackgroundBrush"] = new SolidColorBrush(tabHeaderColor);
             Resources["EnvTabsTabHeaderForegroundBrush"] = new SolidColorBrush(fgColor);
             Resources["EnvTabsTabHeaderHoverBrush"] = new SolidColorBrush(tabHoverColor);
@@ -563,6 +738,22 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
             ExitStyleEditMode(restoreSnapshot: true, setStatus: false);
             LoadFromConfig();
+        }
+
+        private void UpdateEnvTabsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            try
+            {
+                var config = TabGroupConfigLoader.LoadOrNull();
+                UpdateChecker.CheckNow(SSMS_EnvTabsPackage.Instance, config?.Settings, ignoreSettings: true);
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = "Failed to check updates.";
+                EnvTabsLog.Info($"SettingsToolWindowControl update check failed: {ex.Message}");
+            }
         }
 
         private void ResetDefaultsButton_Click(object sender, RoutedEventArgs e)
@@ -1043,6 +1234,21 @@ namespace SSMS_EnvTabs
             }
         }
 
+        private TextBlock GetTokenHelpText(EditableStyleField field)
+        {
+            switch (field)
+            {
+                case EditableStyleField.SuggestedGroupName:
+                    return suggestedGroupNameTokenHelpText;
+                case EditableStyleField.NewQueryRename:
+                    return newQueryRenameTokenHelpText;
+                case EditableStyleField.SavedFileRename:
+                    return savedFileRenameTokenHelpText;
+                default:
+                    return null;
+            }
+        }
+
         private void UpdateStyleEditUi()
         {
             UpdateStyleRowUi(EditableStyleField.SuggestedGroupName);
@@ -1060,6 +1266,7 @@ namespace SSMS_EnvTabs
             Button saveButton = GetSaveButton(field);
             Button cancelButton = GetCancelButton(field);
             StackPanel tokenPanel = GetTokenPanel(field);
+            TextBlock tokenHelpText = GetTokenHelpText(field);
 
             if (textBox != null)
             {
@@ -1089,6 +1296,11 @@ namespace SSMS_EnvTabs
             if (tokenPanel != null)
             {
                 tokenPanel.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            if (tokenHelpText != null)
+            {
+                tokenHelpText.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
@@ -1351,6 +1563,34 @@ namespace SSMS_EnvTabs
                 || connectionGroupCards.Any(card => card.IsEditing);
         }
 
+        private void UpdateConnectionTabEditInteractionState()
+        {
+            bool hasActiveEdit = HasActiveConnectionTabEdit();
+            bool allowGlobalActions = !hasActiveEdit;
+
+            openJsonButton.IsEnabled = allowGlobalActions;
+            resetDefaultsButton.IsEnabled = allowGlobalActions;
+            reloadButton.IsEnabled = allowGlobalActions;
+            updateEnvTabsButton.IsEnabled = allowGlobalActions;
+            copyLogPathButton.IsEnabled = allowGlobalActions;
+            addServerAliasButton.IsEnabled = allowGlobalActions;
+            addConnectionGroupButton.IsEnabled = allowGlobalActions;
+
+            suggestedGroupNameEditButton.IsEnabled = allowGlobalActions;
+            suggestedGroupNameSaveButton.IsEnabled = allowGlobalActions;
+            suggestedGroupNameCancelButton.IsEnabled = allowGlobalActions;
+            newQueryRenameEditButton.IsEnabled = allowGlobalActions;
+            newQueryRenameSaveButton.IsEnabled = allowGlobalActions;
+            newQueryRenameCancelButton.IsEnabled = allowGlobalActions;
+            savedFileRenameEditButton.IsEnabled = allowGlobalActions;
+            savedFileRenameSaveButton.IsEnabled = allowGlobalActions;
+            savedFileRenameCancelButton.IsEnabled = allowGlobalActions;
+
+            suggestedGroupNameTokenPanel.IsEnabled = allowGlobalActions;
+            newQueryRenameTokenPanel.IsEnabled = allowGlobalActions;
+            savedFileRenameTokenPanel.IsEnabled = allowGlobalActions;
+        }
+
         private bool CanStartConnectionTabEdit(string blockedMessage)
         {
             if (activeStyleEditField != EditableStyleField.None)
@@ -1388,6 +1628,7 @@ namespace SSMS_EnvTabs
 
             serverAliasRows.Insert(0, row);
             RebuildServerAliasRowsUi();
+            RebuildConnectionGroupCardsUi();
             statusText.Text = "Enter alias values, then click Save.";
         }
 
@@ -1414,6 +1655,7 @@ namespace SSMS_EnvTabs
 
             connectionGroupCards.Insert(0, card);
             RebuildConnectionGroupCardsUi();
+            RebuildServerAliasRowsUi();
             statusText.Text = "Enter group values, then click Save.";
         }
 
@@ -1421,23 +1663,33 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
+            activeAliasEditRow = null;
+            activeAliasServerTextBox = null;
+            activeAliasAliasTextBox = null;
             serverAliasRowsPanel.Children.Clear();
+            bool hasActiveEdit = HasActiveConnectionTabEdit();
 
             if (!showServerAliasSection)
             {
+                serverAliasColumnHeaderGrid.Visibility = Visibility.Collapsed;
+                UpdateConnectionTabEditInteractionState();
                 return;
             }
 
             if (serverAliasRows.Count == 0)
             {
+                serverAliasColumnHeaderGrid.Visibility = Visibility.Collapsed;
                 serverAliasRowsPanel.Children.Add(new TextBlock
                 {
                     Text = "No server aliases configured.",
                     Opacity = 0.72,
                     Margin = new Thickness(16, 6, 0, 8)
                 });
+                UpdateConnectionTabEditInteractionState();
                 return;
             }
+
+            serverAliasColumnHeaderGrid.Visibility = Visibility.Visible;
 
             foreach (ServerAliasRowState row in serverAliasRows)
             {
@@ -1458,19 +1710,32 @@ namespace SSMS_EnvTabs
                 StackPanel fieldsPanel = new StackPanel();
                 if (row.IsEditing)
                 {
-                    fieldsPanel.Children.Add(new TextBlock { Text = "Server", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 3) });
-                    TextBox serverTextBox = new TextBox { Text = row.Server ?? string.Empty, MinWidth = 250, Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(6, 3, 6, 3) };
-                    ApplyEditorTextBoxTheme(serverTextBox);
-                    fieldsPanel.Children.Add(serverTextBox);
+                    Grid editorGrid = new Grid();
+                    editorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    editorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                    fieldsPanel.Children.Add(new TextBlock { Text = "Alias", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 3) });
+                    Grid inputsGrid = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+                    inputsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    inputsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                    StackPanel serverPanel = new StackPanel { Margin = new Thickness(0, 0, 6, 0) };
+                    TextBox serverTextBox = new TextBox { Text = row.Server ?? string.Empty, MinWidth = 250, Padding = new Thickness(6, 3, 6, 3) };
+                    ApplyEditorTextBoxTheme(serverTextBox);
+                    serverPanel.Children.Add(serverTextBox);
+                    Grid.SetColumn(serverPanel, 0);
+                    inputsGrid.Children.Add(serverPanel);
+
+                    StackPanel aliasPanel = new StackPanel { Margin = new Thickness(6, 0, 0, 0) };
                     TextBox aliasTextBox = new TextBox { Text = row.Alias ?? string.Empty, MinWidth = 250, Padding = new Thickness(6, 3, 6, 3) };
                     ApplyEditorTextBoxTheme(aliasTextBox);
-                    fieldsPanel.Children.Add(aliasTextBox);
+                    aliasPanel.Children.Add(aliasTextBox);
+                    Grid.SetColumn(aliasPanel, 1);
+                    inputsGrid.Children.Add(aliasPanel);
+                    editorGrid.Children.Add(inputsGrid);
 
-                    StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
+                    StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 0, 0) };
 
-                    Button saveButton = new Button { Content = "Save", Style = ResolveButtonStyle("CompactCardButtonStyle") };
+                    Button saveButton = new Button { Content = "Save", Style = ResolveButtonStyle("PrimaryCompactCardButtonStyle") };
                     saveButton.Click += (s, e) => SaveServerAliasRow(row, serverTextBox.Text, aliasTextBox.Text);
                     actionPanel.Children.Add(saveButton);
 
@@ -1478,27 +1743,54 @@ namespace SSMS_EnvTabs
                     cancelButton.Click += (s, e) => CancelServerAliasEdit(row);
                     actionPanel.Children.Add(cancelButton);
 
+                    Grid.SetRow(actionPanel, 1);
+                    editorGrid.Children.Add(actionPanel);
+
+                    fieldsPanel.Children.Add(editorGrid);
+
                     Grid.SetColumn(fieldsPanel, 0);
-                    Grid.SetColumn(actionPanel, 1);
+                    Grid.SetColumnSpan(fieldsPanel, 2);
                     grid.Children.Add(fieldsPanel);
-                    grid.Children.Add(actionPanel);
+
+                    activeAliasEditRow = row;
+                    activeAliasServerTextBox = serverTextBox;
+                    activeAliasAliasTextBox = aliasTextBox;
                 }
                 else
                 {
-                    fieldsPanel.Children.Add(new TextBlock
+                    Grid summaryGrid = new Grid();
+                    summaryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    summaryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                    TextBlock serverValueText = new TextBlock
                     {
-                        Text = $"{row.Server ?? string.Empty} => {row.Alias ?? string.Empty}",
+                        Text = string.IsNullOrWhiteSpace(row.Server) ? "(none)" : row.Server,
                         FontWeight = FontWeights.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center
-                    });
+                    };
+                    Grid.SetColumn(serverValueText, 0);
+                    summaryGrid.Children.Add(serverValueText);
+
+                    TextBlock aliasValueText = new TextBlock
+                    {
+                        Text = string.IsNullOrWhiteSpace(row.Alias) ? "(none)" : row.Alias,
+                        FontWeight = FontWeights.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(aliasValueText, 1);
+                    summaryGrid.Children.Add(aliasValueText);
+
+                    fieldsPanel.Children.Add(summaryGrid);
 
                     StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
 
                     Button editButton = new Button { Content = "Edit", Style = ResolveButtonStyle("CompactCardButtonStyle") };
+                    editButton.IsEnabled = !hasActiveEdit;
                     editButton.Click += (s, e) => BeginServerAliasEdit(row);
                     actionPanel.Children.Add(editButton);
 
-                    Button deleteButton = new Button { Content = "Delete", Style = ResolveButtonStyle("CompactCardButtonStyle") };
+                    Button deleteButton = new Button { Content = "Delete", Style = ResolveButtonStyle("DangerCompactCardButtonStyle") };
+                    deleteButton.IsEnabled = !hasActiveEdit;
                     deleteButton.Click += (s, e) => DeleteServerAliasRow(row);
                     actionPanel.Children.Add(deleteButton);
 
@@ -1511,6 +1803,8 @@ namespace SSMS_EnvTabs
                 cardBorder.Child = grid;
                 serverAliasRowsPanel.Children.Add(cardBorder);
             }
+
+            UpdateConnectionTabEditInteractionState();
         }
 
         private void BeginServerAliasEdit(ServerAliasRowState row)
@@ -1527,6 +1821,7 @@ namespace SSMS_EnvTabs
             row.SnapshotServer = row.Server;
             row.SnapshotAlias = row.Alias;
             RebuildServerAliasRowsUi();
+            RebuildConnectionGroupCardsUi();
             statusText.Text = "Editing alias. Click Save or Cancel.";
         }
 
@@ -1559,6 +1854,7 @@ namespace SSMS_EnvTabs
 
             SaveConnectionGroupsTabFromUi("Server alias saved.", persistAliases: true);
             RebuildServerAliasRowsUi();
+            RebuildConnectionGroupCardsUi();
         }
 
         private void CancelServerAliasEdit(ServerAliasRowState row)
@@ -1579,6 +1875,7 @@ namespace SSMS_EnvTabs
             }
 
             RebuildServerAliasRowsUi();
+            RebuildConnectionGroupCardsUi();
             statusText.Text = "Alias edit canceled.";
         }
 
@@ -1600,13 +1897,21 @@ namespace SSMS_EnvTabs
             serverAliasRows.Remove(row);
             SaveConnectionGroupsTabFromUi("Server alias deleted.", persistAliases: true);
             RebuildServerAliasRowsUi();
+            RebuildConnectionGroupCardsUi();
         }
 
         private void RebuildConnectionGroupCardsUi()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
+            activeConnectionGroupEditCard = null;
+            activeConnectionGroupNameTextBox = null;
+            activeConnectionServerTextBox = null;
+            activeConnectionDatabaseTextBox = null;
+            activeConnectionPriorityTextBox = null;
+            activeConnectionColorCombo = null;
             connectionGroupCardsPanel.Children.Clear();
+            bool hasActiveEdit = HasActiveConnectionTabEdit();
             bool showDatabaseField = ShouldShowDatabaseInCards();
             bool showGroupNameField = ShouldShowGroupNameInConnectionCards();
 
@@ -1618,6 +1923,7 @@ namespace SSMS_EnvTabs
                     Opacity = 0.72,
                     Margin = new Thickness(16, 6, 0, 8)
                 });
+                UpdateConnectionTabEditInteractionState();
                 return;
             }
 
@@ -1625,22 +1931,40 @@ namespace SSMS_EnvTabs
                 .OrderBy(c => c.Priority)
                 .ThenBy(c => c.GroupName ?? string.Empty, StringComparer.OrdinalIgnoreCase))
             {
-                Brush cardBackground = ResolveCardBackgroundBrush(card.ColorIndex);
-                Brush cardForeground = ResolveCardForegroundBrush(cardBackground);
+                Brush cardSurface = TryFindResource("EnvTabsBackgroundBrush") as Brush ?? Brushes.White;
+                Brush cardForeground = ResolveReadableForegroundBrush(cardSurface);
+                Brush swatchFill = ResolveColorSwatchFillBrush(card.ColorIndex);
+                Brush swatchBorder = ResolveColorSwatchBorderBrush(card.ColorIndex);
 
                 Border cardBorder = new Border
                 {
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(4),
                     Padding = new Thickness(8, 6, 8, 6),
-                    Margin = new Thickness(0, 0, 0, 6),
-                    Background = cardBackground
+                    Margin = new Thickness(0, 0, 0, 6)
                 };
                 cardBorder.SetResourceReference(Border.BorderBrushProperty, "EnvTabsBorderBrush");
+                cardBorder.SetResourceReference(Border.BackgroundProperty, "EnvTabsBackgroundBrush");
 
                 Grid grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                Border swatch = new Border
+                {
+                    Width = 16,
+                    Height = 16,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Visibility = card.IsEditing ? Visibility.Collapsed : Visibility.Visible,
+                    CornerRadius = new CornerRadius(1),
+                    BorderThickness = new Thickness(1),
+                    Background = swatchFill,
+                    BorderBrush = swatchBorder
+                };
+                Grid.SetColumn(swatch, 0);
+                grid.Children.Add(swatch);
 
                 StackPanel fieldsPanel = new StackPanel();
                 if (card.IsEditing)
@@ -1709,7 +2033,7 @@ namespace SSMS_EnvTabs
 
                     StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
 
-                    Button saveButton = new Button { Content = "Save", Style = ResolveButtonStyle("CompactCardButtonStyle") };
+                    Button saveButton = new Button { Content = "Save", Style = ResolveButtonStyle("PrimaryCompactCardButtonStyle") };
                     saveButton.Click += (s, e) => SaveConnectionGroupCard(card, showGroupNameField ? groupTextBox?.Text : card.GroupName, serverTextBox.Text, databaseTextBox.Text, priorityTextBox.Text, colorCombo.SelectedValue);
                     actionPanel.Children.Add(saveButton);
 
@@ -1717,10 +2041,17 @@ namespace SSMS_EnvTabs
                     cancelButton.Click += (s, e) => CancelConnectionGroupEdit(card);
                     actionPanel.Children.Add(cancelButton);
 
-                    Grid.SetColumn(fieldsPanel, 0);
-                    Grid.SetColumn(actionPanel, 1);
+                    Grid.SetColumn(fieldsPanel, 1);
+                    Grid.SetColumn(actionPanel, 2);
                     grid.Children.Add(fieldsPanel);
                     grid.Children.Add(actionPanel);
+
+                    activeConnectionGroupEditCard = card;
+                    activeConnectionGroupNameTextBox = groupTextBox;
+                    activeConnectionServerTextBox = serverTextBox;
+                    activeConnectionDatabaseTextBox = databaseTextBox;
+                    activeConnectionPriorityTextBox = priorityTextBox;
+                    activeConnectionColorCombo = colorCombo;
                 }
                 else
                 {
@@ -1752,15 +2083,17 @@ namespace SSMS_EnvTabs
                     StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
 
                     Button editButton = new Button { Content = "Edit", Style = ResolveButtonStyle("CompactCardButtonStyle") };
+                    editButton.IsEnabled = !hasActiveEdit;
                     editButton.Click += (s, e) => BeginConnectionGroupEdit(card);
                     actionPanel.Children.Add(editButton);
 
-                    Button deleteButton = new Button { Content = "Delete", Style = ResolveButtonStyle("CompactCardButtonStyle") };
+                    Button deleteButton = new Button { Content = "Delete", Style = ResolveButtonStyle("DangerCompactCardButtonStyle") };
+                    deleteButton.IsEnabled = !hasActiveEdit;
                     deleteButton.Click += (s, e) => DeleteConnectionGroupCard(card);
                     actionPanel.Children.Add(deleteButton);
 
-                    Grid.SetColumn(fieldsPanel, 0);
-                    Grid.SetColumn(actionPanel, 1);
+                    Grid.SetColumn(fieldsPanel, 1);
+                    Grid.SetColumn(actionPanel, 2);
                     grid.Children.Add(fieldsPanel);
                     grid.Children.Add(actionPanel);
                 }
@@ -1768,6 +2101,8 @@ namespace SSMS_EnvTabs
                 cardBorder.Child = grid;
                 connectionGroupCardsPanel.Children.Add(cardBorder);
             }
+
+            UpdateConnectionTabEditInteractionState();
         }
 
         private void BeginConnectionGroupEdit(ConnectionGroupCardState card)
@@ -1787,6 +2122,7 @@ namespace SSMS_EnvTabs
             card.SnapshotPriority = card.Priority;
             card.SnapshotColorIndex = card.ColorIndex;
             RebuildConnectionGroupCardsUi();
+            RebuildServerAliasRowsUi();
             statusText.Text = "Editing group. Click Save or Cancel.";
         }
 
@@ -1856,6 +2192,7 @@ namespace SSMS_EnvTabs
 
             SaveConnectionGroupsTabFromUi("Connection group saved.", persistAliases: showServerAliasSection);
             RebuildConnectionGroupCardsUi();
+            RebuildServerAliasRowsUi();
         }
 
         private void CancelConnectionGroupEdit(ConnectionGroupCardState card)
@@ -1880,6 +2217,7 @@ namespace SSMS_EnvTabs
             }
 
             RebuildConnectionGroupCardsUi();
+            RebuildServerAliasRowsUi();
             statusText.Text = "Group edit canceled.";
         }
 
@@ -1901,6 +2239,7 @@ namespace SSMS_EnvTabs
             connectionGroupCards.Remove(card);
             SaveConnectionGroupsTabFromUi("Connection group deleted.", persistAliases: showServerAliasSection);
             RebuildConnectionGroupCardsUi();
+            RebuildServerAliasRowsUi();
         }
 
         private List<InlineColorChoice> BuildColorChoices(ConnectionGroupCardState card)
@@ -2044,11 +2383,11 @@ namespace SSMS_EnvTabs
             return "Group";
         }
 
-        private Brush ResolveCardBackgroundBrush(int? colorIndex)
+        private Brush ResolveColorSwatchFillBrush(int? colorIndex)
         {
             if (!colorIndex.HasValue)
             {
-                return TryFindResource("EnvTabsBackgroundBrush") as Brush ?? Brushes.White;
+                return Brushes.Transparent;
             }
 
             foreach (ColorPaletteItem color in ColorPalette)
@@ -2059,10 +2398,20 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            return TryFindResource("EnvTabsBackgroundBrush") as Brush ?? Brushes.White;
+            return Brushes.Transparent;
         }
 
-        private Brush ResolveCardForegroundBrush(Brush background)
+        private Brush ResolveColorSwatchBorderBrush(int? colorIndex)
+        {
+            if (colorIndex.HasValue)
+            {
+                return Brushes.Transparent;
+            }
+
+            return TryFindResource("EnvTabsBorderBrush") as Brush ?? Brushes.Gray;
+        }
+
+        private static Brush ResolveReadableForegroundBrush(Brush background)
         {
             Color backgroundColor = GetBrushColor(background, Colors.White);
             return GetRelativeLuminance(backgroundColor) > 0.58

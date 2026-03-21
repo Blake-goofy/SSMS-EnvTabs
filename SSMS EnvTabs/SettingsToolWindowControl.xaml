@@ -9,11 +9,23 @@
              Background="{DynamicResource EnvTabsBackgroundBrush}"
              Foreground="{DynamicResource EnvTabsForegroundBrush}">
     <UserControl.Resources>
+        <Color x:Key="EnvTabsDangerBaseColor">#B42318</Color>
+        <Color x:Key="EnvTabsNeutralBaseColor">#F3F3F3</Color>
         <SolidColorBrush x:Key="EnvTabsBackgroundBrush" Color="White" />
         <SolidColorBrush x:Key="EnvTabsForegroundBrush" Color="Black" />
         <SolidColorBrush x:Key="EnvTabsBorderBrush" Color="#707070" />
         <SolidColorBrush x:Key="EnvTabsLinkBrush" Color="#0067C0" />
         <SolidColorBrush x:Key="EnvTabsToggleOnBrush" Color="#0067C0" />
+        <SolidColorBrush x:Key="EnvTabsButtonNeutralBrush" Color="{StaticResource EnvTabsNeutralBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonNeutralHoverBrush" Color="{StaticResource EnvTabsNeutralBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonNeutralPressedBrush" Color="{StaticResource EnvTabsNeutralBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonPrimaryHoverBrush" Color="{DynamicResource EnvTabsToggleOnBrush}" />
+        <SolidColorBrush x:Key="EnvTabsButtonPrimaryPressedBrush" Color="{DynamicResource EnvTabsToggleOnBrush}" />
+        <SolidColorBrush x:Key="EnvTabsButtonDangerBrush" Color="{StaticResource EnvTabsDangerBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonDangerHoverBrush" Color="{StaticResource EnvTabsDangerBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonDangerPressedBrush" Color="{StaticResource EnvTabsDangerBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonDangerTextBrush" Color="{StaticResource EnvTabsDangerBaseColor}" />
+        <SolidColorBrush x:Key="EnvTabsButtonPrimaryTextBrush" Color="White" />
         <SolidColorBrush x:Key="EnvTabsButtonHoverBrush" Color="#F0F0F0" />
         <SolidColorBrush x:Key="EnvTabsButtonHoverTextBrush" Color="#000000" />
         <SolidColorBrush x:Key="EnvTabsButtonPressedBrush" Color="#E6E6E6" />
@@ -98,7 +110,7 @@
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
-            <Setter Property="Background" Value="{DynamicResource EnvTabsBackgroundBrush}" />
+            <Setter Property="Background" Value="{DynamicResource EnvTabsButtonNeutralBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -115,11 +127,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderHoverBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsButtonNeutralHoverBrush}" />
                                 <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderSelectedBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsButtonNeutralPressedBrush}" />
                                 <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
@@ -189,6 +201,105 @@
             <Setter Property="Padding" Value="8,3" />
             <Setter Property="Margin" Value="0,0,8,0" />
             <Setter Property="MinWidth" Value="84" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
+            <Setter Property="Background" Value="{DynamicResource EnvTabsTokenButtonBackgroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsTokenButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsTokenButtonPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButtonBaseStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Background" Value="{DynamicResource EnvTabsToggleOnBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsToggleOnBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsButtonPrimaryTextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsButtonPrimaryHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsButtonPrimaryPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DangerButtonBaseStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsButtonDangerBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsButtonDangerTextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsButtonDangerBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource EnvTabsButtonDangerHoverBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="CompactHeaderButtonStyle" TargetType="Button" BasedOn="{StaticResource EnvTabsButtonBaseStyle}">
@@ -203,6 +314,26 @@
             <Setter Property="Margin" Value="6,0,0,0" />
             <Setter Property="MinWidth" Value="64" />
             <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="PrimaryCompactCardButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonBaseStyle}">
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="DangerCompactCardButtonStyle" TargetType="Button" BasedOn="{StaticResource DangerButtonBaseStyle}">
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="PrimaryStyleEditButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonBaseStyle}">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Margin" Value="8,8,0,0" />
+            <Setter Property="MinWidth" Value="72" />
         </Style>
 
         <Style x:Key="EnvTabsTabItemStyle" TargetType="TabItem">
@@ -262,18 +393,43 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                <Button x:Name="OpenJsonButton"
-                        Content="Open JSON"
-                        Style="{StaticResource SettingsActionButtonStyle}"
-                        ToolTip="Open TabGroupConfig.json for advanced editing" />
                 <Button x:Name="ResetDefaultsButton"
                     Content="Reset to default"
                     Style="{StaticResource SettingsActionButtonStyle}"
                     ToolTip="Reset settings on this page to default values" />
                 <Button x:Name="ReloadButton"
-                        Content="Reload"
                         Style="{StaticResource SettingsActionButtonStyle}"
-                        ToolTip="Reload settings from TabGroupConfig.json" />
+                        ToolTip="Reload settings from TabGroupConfig.json">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE72C;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   Margin="0,0,6,0"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="Reload" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="UpdateEnvTabsButton"
+                        Style="{StaticResource SettingsActionButtonStyle}"
+                        ToolTip="Check for updates for EnvTabs">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE895;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   Margin="0,0,6,0"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="Update EnvTabs" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="OpenJsonButton"
+                        Style="{StaticResource SettingsActionButtonStyle}"
+                        ToolTip="Open TabGroupConfig.json for advanced editing">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE943;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   Margin="0,0,6,0"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="Open JSON" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
 
@@ -430,7 +586,7 @@
                                     <TextBox x:Name="SuggestedGroupNameStyleTextBox" Grid.Column="0" Style="{StaticResource StyleValueTextBoxStyle}" Margin="0,0,8,0" />
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                         <Button x:Name="SuggestedGroupNameEditButton" Content="Edit" Style="{StaticResource StyleEditButtonStyle}" Click="StyleEditButton_Click" Margin="0,0,0,0" />
-                                        <Button x:Name="SuggestedGroupNameSaveButton" Content="Save" Style="{StaticResource StyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
+                                        <Button x:Name="SuggestedGroupNameSaveButton" Content="Save" Style="{StaticResource PrimaryStyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
                                         <Button x:Name="SuggestedGroupNameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
                                     </StackPanel>
                                 </Grid>
@@ -439,6 +595,11 @@
                                     <Button Content="[serverAlias]" Tag="[serverAlias]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Configured server alias" />
                                     <Button Content="[db]" Tag="[db]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Database name" />
                                 </StackPanel>
+                                <TextBlock x:Name="SuggestedGroupNameTokenHelpText"
+                                           Style="{StaticResource OptionDescriptionStyle}"
+                                           Text="Use the token buttons above to insert text in the field."
+                                           Margin="0,4,0,0"
+                                           Visibility="Collapsed" />
                             </StackPanel>
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
@@ -454,7 +615,7 @@
                                     <TextBox x:Name="NewQueryRenameStyleTextBox" Grid.Column="0" Style="{StaticResource StyleValueTextBoxStyle}" Margin="0,0,8,0" />
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                         <Button x:Name="NewQueryRenameEditButton" Content="Edit" Style="{StaticResource StyleEditButtonStyle}" Click="StyleEditButton_Click" Margin="0,0,0,0" />
-                                        <Button x:Name="NewQueryRenameSaveButton" Content="Save" Style="{StaticResource StyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
+                                        <Button x:Name="NewQueryRenameSaveButton" Content="Save" Style="{StaticResource PrimaryStyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
                                         <Button x:Name="NewQueryRenameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
                                     </StackPanel>
                                 </Grid>
@@ -462,6 +623,11 @@
                                     <Button Content="[groupName]" Tag="[groupName]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Matched connection group name" />
                                     <Button Content="[#]" Tag="[#]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Per-group query index" />
                                 </StackPanel>
+                                <TextBlock x:Name="NewQueryRenameTokenHelpText"
+                                           Style="{StaticResource OptionDescriptionStyle}"
+                                           Text="Use the token buttons above to insert text in the field."
+                                           Margin="0,4,0,0"
+                                           Visibility="Collapsed" />
                             </StackPanel>
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
@@ -477,7 +643,7 @@
                                     <TextBox x:Name="SavedFileRenameStyleTextBox" Grid.Column="0" Style="{StaticResource StyleValueTextBoxStyle}" Margin="0,0,8,0" />
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                         <Button x:Name="SavedFileRenameEditButton" Content="Edit" Style="{StaticResource StyleEditButtonStyle}" Click="StyleEditButton_Click" Margin="0,0,0,0" />
-                                        <Button x:Name="SavedFileRenameSaveButton" Content="Save" Style="{StaticResource StyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
+                                        <Button x:Name="SavedFileRenameSaveButton" Content="Save" Style="{StaticResource PrimaryStyleEditButtonStyle}" Click="StyleSaveButton_Click" Visibility="Collapsed" Margin="0,0,0,0" />
                                         <Button x:Name="SavedFileRenameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
                                     </StackPanel>
                                 </Grid>
@@ -488,6 +654,11 @@
                                     <Button Content="[serverAlias]" Tag="[serverAlias]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Configured server alias" />
                                     <Button Content="[db]" Tag="[db]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Database name" />
                                 </StackPanel>
+                                <TextBlock x:Name="SavedFileRenameTokenHelpText"
+                                           Style="{StaticResource OptionDescriptionStyle}"
+                                           Text="Use the token buttons above to insert text in the field."
+                                           Margin="0,4,0,0"
+                                           Visibility="Collapsed" />
                             </StackPanel>
                         </Grid>
                     </StackPanel>
@@ -512,6 +683,19 @@
                                         Content="Add alias"
                                         Style="{StaticResource CompactHeaderButtonStyle}"
                                         Margin="0,6,0,0" />
+                            </Grid>
+                            <Grid x:Name="ServerAliasColumnHeaderGrid" Margin="16,4,0,2" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Style="{StaticResource OptionDescriptionStyle}"
+                                           Text="Server"
+                                           Margin="0,0,12,0" />
+                                <TextBlock Grid.Column="1"
+                                           Style="{StaticResource OptionDescriptionStyle}"
+                                           Text="Alias" />
                             </Grid>
                             <StackPanel x:Name="ServerAliasRowsPanel" Margin="0,8,0,8" />
                             <Separator Style="{StaticResource OptionRowSeparatorStyle}" Margin="0,8,0,8" />
