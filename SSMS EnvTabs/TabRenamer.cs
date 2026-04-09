@@ -288,20 +288,7 @@ namespace SSMS_EnvTabs
         /// </summary>
         private static string GetPureName(string rawCaption, string ssmsSuffix, bool enableRemoveDotSql)
         {
-            string caption = StripDirtyIndicators(rawCaption);
-            if (string.IsNullOrEmpty(caption)) return "";
-
-            // Strip the SSMS suffix first so that a .sql embedded before it (e.g. "test.sql - SERVER")
-            // ends up at the tail of the string before we try to remove it.
-            if (!string.IsNullOrEmpty(ssmsSuffix))
-            {
-                while (caption.EndsWith(ssmsSuffix, StringComparison.OrdinalIgnoreCase))
-                    caption = caption.Substring(0, caption.Length - ssmsSuffix.Length).TrimEnd();
-            }
-
-            caption = StripSqlExtension(caption, enableRemoveDotSql);
-
-            return caption;
+            return TabCaptionFormatter.GetPureName(rawCaption, ssmsSuffix, enableRemoveDotSql);
         }
 
         /// <summary>
@@ -311,49 +298,17 @@ namespace SSMS_EnvTabs
         /// </summary>
         private static string StripDirtyIndicators(string name)
         {
-            if (string.IsNullOrEmpty(name)) return name ?? "";
-            string s = name.Trim();
-            bool changed;
-            do
-            {
-                changed = false;
-                // Strip trailing asterisk dirty indicator
-                while (s.EndsWith("*"))
-                {
-                    s = s.TrimEnd('*').TrimEnd();
-                    changed = true;
-                }
-                // Strip trailing ⬤ (U+2B24) dirty indicator, with or without leading space
-                while (s.EndsWith("\u2B24"))
-                {
-                    s = s.Substring(0, s.Length - 1).TrimEnd();
-                    changed = true;
-                }
-            } while (changed);
-            return s;
+            return TabCaptionFormatter.StripDirtyIndicators(name);
         }
 
         private static string StripSqlExtension(string name, bool enabled)
         {
-            if (!enabled || string.IsNullOrEmpty(name))
-            {
-                return name;
-            }
-
-            // Anchor to end-of-string so that a .sql embedded in the middle of an already-renamed
-            // caption (e.g. "test.sql ILS") is not incorrectly stripped, which would cause the
-            // rename loop to corrupt the stored pure name on every poll cycle.
-            return Regex.Replace(name, @"\.sql$", "", RegexOptions.IgnoreCase);
+            return TabCaptionFormatter.StripSqlExtension(name, enabled);
         }
 
         private static string BuildSavedStyleCaption(string savedStyle, string filenameToken, string groupName, string server, string serverAlias, string database)
         {
-            return savedStyle
-                .Replace("[filename]", filenameToken ?? "")
-                .Replace("[groupName]", groupName ?? "")
-                .Replace("[server]", server ?? "")
-                .Replace("[serverAlias]", serverAlias ?? server ?? "")
-                .Replace("[db]", database ?? "");
+            return TabCaptionFormatter.BuildSavedStyleCaption(savedStyle, filenameToken, groupName, server, serverAlias, database);
         }
 
 

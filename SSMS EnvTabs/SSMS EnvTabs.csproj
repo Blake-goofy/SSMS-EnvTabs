@@ -73,6 +73,7 @@
     <Compile Include="TabGroupConfigLoader.cs" />
     <Compile Include="TabGroupConfigModels.cs" />
     <Compile Include="TabGroupColorSolver.cs" />
+    <Compile Include="TabCaptionFormatter.cs" />
     <Compile Include="TabRenamer.cs" />
     <Compile Include="TabRuleMatcher.cs" />
     <Compile Include="UpdateChecker.cs" />

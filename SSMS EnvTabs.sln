@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36915.13 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SSMS EnvTabs", "SSMS EnvTabs\SSMS EnvTabs.csproj", "{2A621EEB-F4CB-46FA-9720-4EA91ACCB4E8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SSMS.EnvTabs.Tests", "tests\SSMS.EnvTabs.Tests\SSMS.EnvTabs.Tests.csproj", "{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,18 @@ Global
 		{2A621EEB-F4CB-46FA-9720-4EA91ACCB4E8}.Release|arm64.Build.0 = Release|arm64
 		{2A621EEB-F4CB-46FA-9720-4EA91ACCB4E8}.Release|x86.ActiveCfg = Release|x86
 		{2A621EEB-F4CB-46FA-9720-4EA91ACCB4E8}.Release|x86.Build.0 = Release|x86
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Debug|arm64.ActiveCfg = Debug|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Debug|arm64.Build.0 = Debug|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Debug|x86.Build.0 = Debug|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Release|arm64.ActiveCfg = Release|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Release|arm64.Build.0 = Release|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Release|x86.ActiveCfg = Release|Any CPU
+		{7A595F91-42A2-4C8B-A30F-E5A9BCDE93D9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

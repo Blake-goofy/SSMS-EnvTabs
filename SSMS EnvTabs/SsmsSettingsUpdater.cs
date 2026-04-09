@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace SSMS_EnvTabs
@@ -61,7 +62,7 @@ namespace SSMS_EnvTabs
                     }
 
                     string replaced = Regex.Replace(text, pattern, m => $"\"{ColorizationKey}\":\"regex\"", RegexOptions.IgnoreCase);
-                    File.WriteAllText(settingsPath, replaced);
+                    WriteAllTextAtomic(settingsPath, replaced);
                     EnvTabsLog.Info($"SsmsSettingsUpdater: Updated colorization setting in '{settingsPath}'.");
                     return;
                 }
@@ -83,12 +84,33 @@ namespace SSMS_EnvTabs
 
                 string insertion = (addComma ? "," : string.Empty) + newline + "  \"" + ColorizationKey + "\": \"regex\"" + newline;
                 string updated = prefix + insertion + text.Substring(lastBrace);
-                File.WriteAllText(settingsPath, updated);
+                WriteAllTextAtomic(settingsPath, updated);
                 EnvTabsLog.Info($"SsmsSettingsUpdater: Added colorization setting in '{settingsPath}'.");
             }
             catch (Exception ex)
             {
                 EnvTabsLog.Info($"SsmsSettingsUpdater: failed to update '{settingsPath}': {ex.Message}");
+            }
+        }
+
+        private static void WriteAllTextAtomic(string path, string content)
+        {
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            string tmpPath = path + ".tmp";
+            File.WriteAllText(tmpPath, content ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+            if (File.Exists(path))
+            {
+                File.Replace(tmpPath, path, null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tmpPath, path);
             }
         }
     }

@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Runtime.Serialization.Json;
 using System.Windows.Forms;
 using Microsoft.VisualStudio.Shell;
 
@@ -347,27 +345,7 @@ namespace SSMS_EnvTabs
         {
             try
             {
-                string path = TabGroupConfigLoader.GetUserConfigPath();
-                var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig), new DataContractJsonSerializerSettings
-                {
-                    UseSimpleDictionaryFormat = true
-                });
-
-                using (var stream = new MemoryStream())
-                {
-                    using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, System.Text.Encoding.UTF8, true, true, "  "))
-                    {
-                        serializer.WriteObject(writer, config);
-                        writer.Flush();
-                    }
-                    
-                    // JsonReaderWriterFactory/DataContractJsonSerializer escapes forward slashes as \/.
-                    // We decode to string, replace them for readability, and write back.
-                    string json = System.Text.Encoding.UTF8.GetString(stream.ToArray());
-                    json = json.Replace("\\/", "/");
-                    
-                    File.WriteAllText(path, json, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-                }
+                TabGroupConfigLoader.SaveConfig(config);
             }
             catch (System.Exception ex)
             {

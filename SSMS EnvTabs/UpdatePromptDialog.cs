@@ -84,6 +84,15 @@ namespace SSMS_EnvTabs
 
             contentPanel.Children.Add(versionGrid);
 
+            var saveWorkWarning = new TextBlock
+            {
+                Text = "Please save all open query tabs before continuing. Updating will close SSMS.",
+                TextWrapping = TextWrapping.Wrap,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 2, 0, 8)
+            };
+            contentPanel.Children.Add(saveWorkWarning);
+
             var releaseNotes = new TextBlock
             {
                 Margin = new Thickness(0, 8, 0, 6)

@@ -8,7 +8,9 @@ using System.Net.Http;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,19 +19,59 @@ namespace SSMS_EnvTabs
     internal static class UpdateChecker
     {
         private const string ReleasesApiUrl = "https://api.github.com/repos/Blake-goofy/SSMS-EnvTabs/releases/latest";
-        private const string VsixId = "SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7";
+        private const string VsixId = "SSMS_EnvTabs";
+        private const string LegacyVsixId = "SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7";
         private static int pendingStartupCheck;
+        private static readonly object diagnosticsLock = new object();
+        private static string lastUpdateResult = "No update check has run yet.";
+        internal static event Action LastUpdateResultChanged;
+
+        internal static string LastUpdateResult
+        {
+            get
+            {
+                lock (diagnosticsLock)
+                {
+                    return lastUpdateResult;
+                }
+            }
+        }
+
+        private static void SetLastUpdateResult(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            string stamped = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}";
+            lock (diagnosticsLock)
+            {
+                lastUpdateResult = stamped;
+            }
+
+            try
+            {
+                LastUpdateResultChanged?.Invoke();
+            }
+            catch
+            {
+                // Best-effort diagnostics notification.
+            }
+        }
 
         public static void ScheduleCheck(AsyncPackage package, TabGroupSettings settings)
         {
             if (settings?.EnableUpdateChecks == false)
             {
                 EnvTabsLog.Info("Update check skipped: disabled by settings.");
+                SetLastUpdateResult("Update check skipped because it is disabled in settings.");
                 return;
             }
 
             Interlocked.Exchange(ref pendingStartupCheck, 1);
             EnvTabsLog.Info("Update check deferred until first valid connected document is opened.");
+            SetLastUpdateResult("Startup update check deferred until first connected query tab.");
         }
 
         internal static void NotifyConnectedDocument(AsyncPackage package, TabGroupSettings settings, string server, string database)
@@ -42,6 +84,7 @@ namespace SSMS_EnvTabs
             if (settings?.EnableUpdateChecks == false)
             {
                 Interlocked.Exchange(ref pendingStartupCheck, 0);
+                SetLastUpdateResult("Startup update check canceled because update checks are disabled.");
                 return;
             }
 
@@ -57,6 +100,7 @@ namespace SSMS_EnvTabs
                     var token = package.DisposalToken;
                     await Task.Delay(TimeSpan.FromMilliseconds(900), token);
                     EnvTabsLog.Info($"Update check resumed after first connected document. Server='{server}', Database='{database}'.");
+                    SetLastUpdateResult("Running deferred startup update check.");
                     await CheckForUpdatesAsync(package, token, showUpToDate: false);
                 }
                 catch (OperationCanceledException)
@@ -66,6 +110,7 @@ namespace SSMS_EnvTabs
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Deferred update check failed: {ex.Message}");
+                    SetLastUpdateResult($"Deferred update check failed: {ex.Message}");
                 }
             });
         }
@@ -75,6 +120,7 @@ namespace SSMS_EnvTabs
             if (!ignoreSettings && settings?.EnableUpdateChecks == false)
             {
                 EnvTabsLog.Info("Manual update check skipped: disabled by settings.");
+                SetLastUpdateResult("Manual update check skipped because it is disabled in settings.");
                 return;
             }
 
@@ -83,6 +129,7 @@ namespace SSMS_EnvTabs
                 try
                 {
                     EnvTabsLog.Info("Manual update check started.");
+                    SetLastUpdateResult("Manual update check started.");
                     await CheckForUpdatesAsync(package, package.DisposalToken, showUpToDate: true);
                 }
                 catch (OperationCanceledException)
@@ -92,6 +139,7 @@ namespace SSMS_EnvTabs
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Manual update check failed: {ex.Message}");
+                    SetLastUpdateResult($"Manual update check failed: {ex.Message}");
                 }
             });
         }
@@ -102,6 +150,7 @@ namespace SSMS_EnvTabs
             if (currentVersion == null)
             {
                 EnvTabsLog.Info("Update check failed: current version unavailable.");
+                SetLastUpdateResult("Update check failed because current version could not be determined.");
                 return;
             }
 
@@ -109,6 +158,7 @@ namespace SSMS_EnvTabs
             if (release == null || release.Draft)
             {
                 EnvTabsLog.Info("Update check failed: release info unavailable.");
+                SetLastUpdateResult("Update check failed because latest release info was unavailable.");
                 return;
             }
 
@@ -116,12 +166,14 @@ namespace SSMS_EnvTabs
             if (latestVersion == null)
             {
                 EnvTabsLog.Info("Update check failed: latest version parse failed.");
+                SetLastUpdateResult("Update check failed because latest release version could not be parsed.");
                 return;
             }
 
             if (latestVersion <= currentVersion)
             {
                 EnvTabsLog.Info($"Update check: already on latest ({currentVersion}).");
+                SetLastUpdateResult($"Up to date ({FormatVersion(currentVersion)}).");
                 if (showUpToDate)
                 {
                     await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
@@ -133,6 +185,7 @@ namespace SSMS_EnvTabs
             await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
 
             EnvTabsLog.Info($"Update available: {latestVersion} (current {currentVersion}).");
+            SetLastUpdateResult($"Update available: {FormatVersion(currentVersion)} -> {FormatVersion(latestVersion)}.");
             ShowUpdatePrompt(package, release, latestVersion, currentVersion);
         }
 
@@ -282,8 +335,8 @@ namespace SSMS_EnvTabs
                 return;
             }
 
-            string downloadUrl = GetVsixDownloadUrl(release);
-            if (string.IsNullOrWhiteSpace(downloadUrl))
+            GitHubAsset vsixAsset = GetVsixAsset(release);
+            if (vsixAsset == null || string.IsNullOrWhiteSpace(vsixAsset.DownloadUrl))
             {
                 OpenUrl(release.HtmlUrl);
                 return;
@@ -293,23 +346,47 @@ namespace SSMS_EnvTabs
             {
                 try
                 {
+                    SetLastUpdateResult("Preparing update package download.");
+                    string expectedSha256 = await GetExpectedSha256Async(release, vsixAsset);
+                    if (string.IsNullOrWhiteSpace(expectedSha256))
+                    {
+                        EnvTabsLog.Info("Update install aborted: .sha256 release asset missing or invalid.");
+                        SetLastUpdateResult("Update install aborted: missing or invalid .sha256 release asset.");
+                        OpenUrl(release.HtmlUrl);
+                        return;
+                    }
+
                     string tempPath = Path.Combine(Path.GetTempPath(), $"SSMS-EnvTabs-{Guid.NewGuid():N}.vsix");
-                    await DownloadFileAsync(downloadUrl, tempPath);
+                    await DownloadFileAsync(vsixAsset.DownloadUrl, tempPath);
+
+                    string actualSha256 = ComputeSha256Hex(tempPath);
+                    if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnvTabsLog.Info($"Update install aborted: checksum mismatch. Expected={expectedSha256}, Actual={actualSha256}");
+                        SetLastUpdateResult("Update install aborted: checksum verification failed.");
+                        OpenUrl(release.HtmlUrl);
+                        return;
+                    }
+
+                    EnvTabsLog.Info("Update package checksum verified successfully.");
+                    SetLastUpdateResult("Update package verified. Launching installer.");
 
                     if (!LaunchUpdateScript(tempPath, release, currentVersion))
                     {
+                        SetLastUpdateResult("Could not launch installer automatically; opened release page instead.");
                         OpenUrl(release.HtmlUrl);
                     }
                 }
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Update install failed: {ex.Message}");
+                    SetLastUpdateResult($"Update install failed: {ex.Message}");
                     OpenUrl(release.HtmlUrl);
                 }
             });
         }
 
-        private static string GetVsixDownloadUrl(GitHubRelease release)
+        private static GitHubAsset GetVsixAsset(GitHubRelease release)
         {
             if (release?.Assets == null)
             {
@@ -320,11 +397,147 @@ namespace SSMS_EnvTabs
             {
                 if (!string.IsNullOrWhiteSpace(asset?.Name) && asset.Name.EndsWith(".vsix", StringComparison.OrdinalIgnoreCase))
                 {
-                    return asset.DownloadUrl;
+                    return asset;
                 }
             }
 
             return null;
+        }
+
+        private static GitHubAsset GetChecksumAsset(GitHubRelease release, string vsixAssetName)
+        {
+            if (release?.Assets == null)
+            {
+                return null;
+            }
+
+            string expectedName = string.IsNullOrWhiteSpace(vsixAssetName) ? null : vsixAssetName + ".sha256";
+            if (!string.IsNullOrWhiteSpace(expectedName))
+            {
+                foreach (var asset in release.Assets)
+                {
+                    if (asset == null || string.IsNullOrWhiteSpace(asset.Name))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(asset.Name, expectedName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return asset;
+                    }
+                }
+            }
+
+            foreach (var asset in release.Assets)
+            {
+                if (asset == null || string.IsNullOrWhiteSpace(asset.Name))
+                {
+                    continue;
+                }
+
+                if (asset.Name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
+                {
+                    return asset;
+                }
+            }
+
+            return null;
+        }
+
+        private static async Task<string> GetExpectedSha256Async(GitHubRelease release, GitHubAsset vsixAsset)
+        {
+            var checksumAsset = GetChecksumAsset(release, vsixAsset?.Name);
+            if (checksumAsset == null || string.IsNullOrWhiteSpace(checksumAsset.DownloadUrl))
+            {
+                return null;
+            }
+
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("SSMS-EnvTabs");
+                    string checksumText = await client.GetStringAsync(checksumAsset.DownloadUrl);
+                    return ParseSha256FromText(checksumText, vsixAsset?.Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Checksum download failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static string ParseSha256FromText(string checksumText, string vsixAssetName)
+        {
+            if (string.IsNullOrWhiteSpace(checksumText))
+            {
+                return null;
+            }
+
+            string[] lines = checksumText
+                .Replace("\r\n", "\n")
+                .Replace("\r", "\n")
+                .Split('\n');
+
+            if (!string.IsNullOrWhiteSpace(vsixAssetName))
+            {
+                foreach (string rawLine in lines)
+                {
+                    string line = rawLine?.Trim();
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    // Common format: <hash>  <fileName>
+                    var match = Regex.Match(line, @"^([A-Fa-f0-9]{64})\s+\*?(.+)$");
+                    if (match.Success)
+                    {
+                        string fileToken = match.Groups[2].Value.Trim();
+                        if (fileToken.Equals(vsixAssetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return match.Groups[1].Value.ToLowerInvariant();
+                        }
+                    }
+
+                    // Alternate format: SHA256(fileName)= <hash>
+                    var alt = Regex.Match(line, @"^SHA256\((.+)\)\s*=\s*([A-Fa-f0-9]{64})$", RegexOptions.IgnoreCase);
+                    if (alt.Success)
+                    {
+                        string fileToken = alt.Groups[1].Value.Trim();
+                        if (fileToken.Equals(vsixAssetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return alt.Groups[2].Value.ToLowerInvariant();
+                        }
+                    }
+                }
+            }
+
+            // Fallback: accept the first 64-hex token from the file.
+            var firstHash = Regex.Match(checksumText, @"\b([A-Fa-f0-9]{64})\b");
+            if (firstHash.Success)
+            {
+                return firstHash.Groups[1].Value.ToLowerInvariant();
+            }
+
+            return null;
+        }
+
+        private static string ComputeSha256Hex(string filePath)
+        {
+            using (var stream = File.OpenRead(filePath))
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(stream);
+                var builder = new StringBuilder(hash.Length * 2);
+                foreach (byte b in hash)
+                {
+                    builder.Append(b.ToString("x2"));
+                }
+
+                return builder.ToString();
+            }
         }
 
         private static async Task DownloadFileAsync(string url, string path)
@@ -414,6 +627,8 @@ namespace SSMS_EnvTabs
                     "timeout /t 2 /nobreak >nul" + Environment.NewLine +
                     "echo." + Environment.NewLine +
                     "start \"\" %installer% /quiet /uninstall:" + VsixId + Environment.NewLine +
+                    "powershell -NoProfile -EncodedCommand " + uninstallPsEncoded + Environment.NewLine +
+                    "start \"\" %installer% /quiet /uninstall:" + LegacyVsixId + Environment.NewLine +
                     "powershell -NoProfile -EncodedCommand " + uninstallPsEncoded + Environment.NewLine +
                     "start \"\" %installer% /quiet %vsix%" + Environment.NewLine +
                     "powershell -NoProfile -EncodedCommand " + installPsEncoded + Environment.NewLine +

@@ -39,6 +39,7 @@ namespace SSMS_EnvTabs
         private string groupColorWatcherDir;
         private string lastColorConfigPath;
         private Timer connectionPollTimer;
+        private int isConnectionPollRunning;
 
         private TabGroupConfig cachedConfig;
         private DateTime cachedConfigLastWriteUtc;
@@ -60,6 +61,8 @@ namespace SSMS_EnvTabs
             public string Server { get; set; }
             public string Database { get; set; }
         }
+
+        internal string LastResolvedColorConfigPath => lastColorConfigPath;
 
         private RdtEventManager(AsyncPackage package, IVsRunningDocumentTable rdt, IVsUIShellOpenDocument shellOpenDoc, IVsMonitorSelection monitorSelection)
         {
@@ -172,6 +175,12 @@ namespace SSMS_EnvTabs
                 {
                     rdt.UnadviseRunningDocTableEvents(rdtEventsCookie);
                     rdtEventsCookie = 0;
+                }
+
+                if (selectionEventsCookie != 0 && monitorSelection != null)
+                {
+                    monitorSelection.UnadviseSelectionEvents(selectionEventsCookie);
+                    selectionEventsCookie = 0;
                 }
             }
             catch
@@ -422,6 +431,11 @@ namespace SSMS_EnvTabs
 
         private void ConnectionPollTick(object state)
         {
+            if (Interlocked.Exchange(ref isConnectionPollRunning, 1) != 0)
+            {
+                return;
+            }
+
             _ = package.JoinableTaskFactory.RunAsync(async () =>
             {
                 try
@@ -432,6 +446,10 @@ namespace SSMS_EnvTabs
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"RdtEventManager.cs::ConnectionPollTick - Error: {ex.Message}");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref isConnectionPollRunning, 0);
                 }
             });
         }

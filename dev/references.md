@@ -14,7 +14,7 @@ Reinstall:
 
 Uninstall:
 ```powershell
-& "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" /uninstall:SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7
+& "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" /uninstall:SSMS_EnvTabs
 ```
 
 ---
@@ -36,3 +36,27 @@ C:\Users\blake\AppData\Local\Temp\<guid>\ColorByRegexConfig.txt
 ```
 - SSMS creates this after opening first query tab
 - Extension writes generated regex lines here
+
+## VS Code Build And Test
+
+This repo includes VS Code tasks and helper scripts so you can build and run tests without leaving VS Code.
+
+Requirements:
+
+- Visual Studio or Build Tools with MSBuild
+- .NET SDK (for running test project)
+
+Run tasks from VS Code:
+
+- `Terminal -> Run Task -> Build VSIX (Debug)`
+- `Terminal -> Run Task -> Build VSIX (Release)`
+- `Terminal -> Run Task -> Run Regression Tests`
+
+Helper scripts:
+
+- `dev/vscode-build.ps1`
+- `dev/vscode-test.ps1`
+
+Task definitions:
+
+- `.vscode/tasks.json`
