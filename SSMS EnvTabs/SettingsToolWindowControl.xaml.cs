@@ -69,8 +69,6 @@ namespace SSMS_EnvTabs
         private Button addServerAliasButton;
         private Button addConnectionGroupButton;
         private TextBlock statusText;
-        private TextBlock diagnosticsColorConfigPathText;
-        private TextBlock diagnosticsUpdateResultText;
         private EditableStyleField activeStyleEditField = EditableStyleField.None;
         private string styleEditSnapshot;
         private List<ServerAliasRowState> serverAliasRows = new List<ServerAliasRowState>();
@@ -80,7 +78,6 @@ namespace SSMS_EnvTabs
         private string currentAutoConfigureMode = DefaultAutoConfigureValue;
         private int nextInlineRowId = 1;
         private bool isThemeEventSubscribed;
-        private bool isUpdateDiagnosticsEventSubscribed;
         private ServerAliasRowState activeAliasEditRow;
         private TextBox activeAliasServerTextBox;
         private TextBox activeAliasAliasTextBox;
@@ -240,8 +237,6 @@ namespace SSMS_EnvTabs
             addServerAliasButton = FindRequiredControl<Button>("AddServerAliasButton");
             addConnectionGroupButton = FindRequiredControl<Button>("AddConnectionGroupButton");
             statusText = FindRequiredControl<TextBlock>("StatusText");
-            diagnosticsColorConfigPathText = FindRequiredControl<TextBlock>("DiagnosticsColorConfigPathText");
-            diagnosticsUpdateResultText = FindRequiredControl<TextBlock>("DiagnosticsUpdateResultText");
 
             openJsonButton.Click += OpenJsonButton_Click;
             resetDefaultsButton.Click += ResetDefaultsButton_Click;
@@ -367,7 +362,6 @@ namespace SSMS_EnvTabs
 
             Loaded -= OnLoaded;
             SubscribeToThemeChanges();
-            SubscribeToUpdateDiagnostics();
             ApplyCurrentThemeAndRefreshUi(rebuildDynamicRows: false);
             InitializeAutoConfigureOptions();
             ApplyComboBoxPopupTheme(autoConfigureCombo);
@@ -378,7 +372,6 @@ namespace SSMS_EnvTabs
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
             UnsubscribeFromThemeChanges();
-            UnsubscribeFromUpdateDiagnostics();
         }
 
         private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -388,44 +381,8 @@ namespace SSMS_EnvTabs
             if (IsVisible)
             {
                 SubscribeToThemeChanges();
-                SubscribeToUpdateDiagnostics();
                 ApplyCurrentThemeAndRefreshUi(rebuildDynamicRows: true);
-                RefreshDiagnosticsSection();
             }
-        }
-
-        private void SubscribeToUpdateDiagnostics()
-        {
-            if (isUpdateDiagnosticsEventSubscribed)
-            {
-                return;
-            }
-
-            UpdateChecker.LastUpdateResultChanged += OnLastUpdateResultChanged;
-            isUpdateDiagnosticsEventSubscribed = true;
-        }
-
-        private void UnsubscribeFromUpdateDiagnostics()
-        {
-            if (!isUpdateDiagnosticsEventSubscribed)
-            {
-                return;
-            }
-
-            UpdateChecker.LastUpdateResultChanged -= OnLastUpdateResultChanged;
-            isUpdateDiagnosticsEventSubscribed = false;
-        }
-
-        private void OnLastUpdateResultChanged()
-        {
-            ThreadHelper.JoinableTaskFactory.Run(async delegate
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (IsVisible)
-                {
-                    RefreshDiagnosticsSection();
-                }
-            });
         }
 
         private void SubscribeToThemeChanges()
@@ -620,7 +577,6 @@ namespace SSMS_EnvTabs
                 autoConfigureCombo.SelectedValue = NormalizeAutoConfigure(settings.AutoConfigure);
                 currentAutoConfigureMode = NormalizeAutoConfigure(settings.AutoConfigure);
                 LoadConnectionGroupsTabState(config);
-                RefreshDiagnosticsSection();
                 ExitStyleEditMode(restoreSnapshot: false, setStatus: false);
                 statusText.Text = "Settings loaded from TabGroupConfig.json";
             }
@@ -792,7 +748,6 @@ namespace SSMS_EnvTabs
             {
                 var config = TabGroupConfigLoader.LoadOrNull();
                 UpdateChecker.CheckNow(SSMS_EnvTabsPackage.Instance, config?.Settings, ignoreSettings: true);
-                RefreshDiagnosticsSection();
             }
             catch (Exception ex)
             {
@@ -905,21 +860,6 @@ namespace SSMS_EnvTabs
             }
 
             return IOPath.Combine(baseDir, "SSMS EnvTabs", "runtime.log");
-        }
-
-        private void RefreshDiagnosticsSection()
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            string resolvedPath = SSMS_EnvTabsPackage.Instance?.RdtEventManagerInstance?.LastResolvedColorConfigPath;
-            diagnosticsColorConfigPathText.Text = string.IsNullOrWhiteSpace(resolvedPath)
-                ? "(not resolved yet)"
-                : resolvedPath;
-
-            string updateResult = UpdateChecker.LastUpdateResult;
-            diagnosticsUpdateResultText.Text = string.IsNullOrWhiteSpace(updateResult)
-                ? "No update check has run yet."
-                : updateResult;
         }
 
         private void ApplyComboBoxPopupTheme(ComboBox combo)

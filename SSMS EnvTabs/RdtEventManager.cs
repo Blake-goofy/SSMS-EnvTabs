@@ -16,6 +16,8 @@ namespace SSMS_EnvTabs
         internal static bool SuppressVerboseLogs;
         private const int RenameRetryCount = 20; // Increased to handle slow connection changes (up to 5s)
         private const int RenameRetryDelayMs = 250;
+        private const int LineIndicatorRetryCount = 12;
+        private const int LineIndicatorRetryDelayMs = 250;
         private const int ConnectionPollIntervalMs = 1000;
 
         private readonly AsyncPackage package;
@@ -28,6 +30,7 @@ namespace SSMS_EnvTabs
         private uint selectionEventsCookie;
 
         private readonly Dictionary<uint, int> renameRetryCounts = new Dictionary<uint, int>();
+        private readonly Dictionary<uint, int> lineIndicatorRetryCounts = new Dictionary<uint, int>();
         private readonly Dictionary<uint, (string Server, string Database)> lastConnectionByCookie = new Dictionary<uint, (string Server, string Database)>();
         private readonly Dictionary<uint, string> lastCaptionByCookie = new Dictionary<uint, string>();
         private FileSystemWatcher configWatcher;
@@ -163,6 +166,7 @@ namespace SSMS_EnvTabs
                 debounceCts?.Dispose();
                 groupColorDebounceCts?.Cancel();
                 groupColorDebounceCts?.Dispose();
+                lineIndicatorRetryCounts.Clear();
             }
             catch (Exception ex)
             {
@@ -345,6 +349,24 @@ namespace SSMS_EnvTabs
             );
 
             bool shouldUpdateColor = !needsRetry && (renamedCount > 0 || isConnectionEvent || autoConfigTriggered);
+            bool lineIndicatorResolved = true;
+
+            try
+            {
+                if (frame != null)
+                {
+                    lineIndicatorResolved = TryApplyLineIndicatorColor(docCookie, frame, frameMoniker, rules, manualRules, config.Settings);
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Verbose($"Line indicator color update failed ({reason}): {ex.Message}");
+            }
+
+            if (!lineIndicatorResolved)
+            {
+                ScheduleLineIndicatorRetry(docCookie, reason);
+            }
                         
             if (config.Settings?.EnableAutoColor == true && shouldUpdateColor)
             {
@@ -420,6 +442,69 @@ namespace SSMS_EnvTabs
                 }
 
                 renameRetryCounts.Remove(docCookie);
+            });
+        }
+
+        private void ScheduleLineIndicatorRetry(uint docCookie, string reason)
+        {
+            if (docCookie == 0)
+            {
+                return;
+            }
+
+            if (lineIndicatorRetryCounts.ContainsKey(docCookie))
+            {
+                return;
+            }
+
+            lineIndicatorRetryCounts[docCookie] = 0;
+
+            _ = package.JoinableTaskFactory.RunAsync(async () =>
+            {
+                for (int i = 0; i < LineIndicatorRetryCount; i++)
+                {
+                    await Task.Delay(LineIndicatorRetryDelayMs).ConfigureAwait(true);
+                    await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                    if (!lineIndicatorRetryCounts.ContainsKey(docCookie))
+                    {
+                        return;
+                    }
+
+                    string moniker = TryGetMonikerFromCookie(docCookie);
+                    if (!IsSqlDocumentMoniker(moniker))
+                    {
+                        lineIndicatorRetryCounts.Remove(docCookie);
+                        return;
+                    }
+
+                    IVsWindowFrame frame = TryGetFrameFromMoniker(moniker);
+                    if (frame == null)
+                    {
+                        continue;
+                    }
+
+                    var config = LoadConfigOrNull();
+                    if (config == null)
+                    {
+                        lineIndicatorRetryCounts.Remove(docCookie);
+                        return;
+                    }
+
+                    var rules = cachedRules ?? TabRuleMatcher.CompileRules(config);
+                    var manualRules = cachedManualRules ?? TabRuleMatcher.CompileManualRules(config);
+
+                    lineIndicatorRetryCounts[docCookie] = i + 1;
+                    EnvTabsLog.Verbose($"LineIndicatorRetry: Reason={reason}, Cookie={docCookie}, Attempt={i + 1}");
+
+                    if (TryApplyLineIndicatorColor(docCookie, frame, moniker, rules, manualRules, config.Settings))
+                    {
+                        lineIndicatorRetryCounts.Remove(docCookie);
+                        return;
+                    }
+                }
+
+                lineIndicatorRetryCounts.Remove(docCookie);
             });
         }
 

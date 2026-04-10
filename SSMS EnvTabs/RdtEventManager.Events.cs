@@ -13,6 +13,7 @@ namespace SSMS_EnvTabs
 
             // Try to hook into this event since OnAfterDocumentWindowShow is unreliable in SSMS
             string moniker = TryGetMonikerFromCookie(docCookie);
+            colorWriter.RecordConfigPathHintFromMoniker(moniker, "FirstDocumentLock");
 
             if (!IsSqlDocumentMoniker(moniker))
             {
@@ -40,11 +41,16 @@ namespace SSMS_EnvTabs
             {
                 if (TryGetMonikerFromFrame(pFrame, out string moniker) && IsSqlDocumentMoniker(moniker))
                 {
+                    colorWriter.RecordConfigPathHintFromMoniker(moniker, "DocumentWindowShow");
                     bool done = HandlePotentialChange(docCookie, pFrame, reason: "DocumentWindowShow");
                     if (!done)
                     {
                         ScheduleRenameRetry(docCookie, "DocumentWindowShow");
                     }
+                }
+                else if (TryGetMonikerFromFrame(pFrame, out string nonSqlMoniker))
+                {
+                    colorWriter.RecordConfigPathHintFromMoniker(nonSqlMoniker, "DocumentWindowShow");
                 }
             }
 
@@ -94,6 +100,7 @@ namespace SSMS_EnvTabs
             {
                 TabRenamer.ForgetCookie(docCookie);
                 renameRetryCounts.Remove(docCookie);
+                lineIndicatorRetryCounts.Remove(docCookie);
                 lastConnectionByCookie.Remove(docCookie);
                 lastCaptionByCookie.Remove(docCookie);
 

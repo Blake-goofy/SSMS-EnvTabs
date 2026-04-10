@@ -567,40 +567,6 @@
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
 
-                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Diagnostics" />
-
-                        <Grid Style="{StaticResource OptionRowGridStyle}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="220" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       Style="{StaticResource OptionTitleStyle}"
-                                       Text="Resolved color config path" />
-                            <TextBlock Grid.Column="1"
-                                       x:Name="DiagnosticsColorConfigPathText"
-                                       Style="{StaticResource OptionDescriptionStyle}"
-                                       Margin="0,0,0,0"
-                                       Text="(not resolved yet)"
-                                       TextWrapping="Wrap" />
-                        </Grid>
-                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
-
-                        <Grid Style="{StaticResource OptionRowGridStyle}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="220" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       Style="{StaticResource OptionTitleStyle}"
-                                       Text="Last update result" />
-                            <TextBlock Grid.Column="1"
-                                       x:Name="DiagnosticsUpdateResultText"
-                                       Style="{StaticResource OptionDescriptionStyle}"
-                                       Margin="0,0,0,0"
-                                       Text="No update check has run yet."
-                                       TextWrapping="Wrap" />
-                        </Grid>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

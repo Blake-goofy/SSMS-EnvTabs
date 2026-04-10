@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Threading.Tasks;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -18,6 +19,7 @@ namespace SSMS_EnvTabs
         private const int ResolveRetryMax = 12;
         private const int ResolveRetryDelayMs = 500;
         private const int TempScanBackoffMs = 3000;
+        private const int MaxFanoutTargets = 8;
         private const double CreationSkewSeconds = 60.0;
         private const double CreationMaxWindowSeconds = 60.0;
 
@@ -26,6 +28,9 @@ namespace SSMS_EnvTabs
         private bool resolveRetryScheduled;
         private int resolveRetryCount;
         private DateTime? lastTempScanUtc;
+        private string resolvedConfigPathSource;
+        private List<string> resolvedFallbackConfigPaths;
+        private string commandCapturedConfigPath;
         private readonly object tempScanLock = new object();
         private List<RdtEventManager.OpenDocumentInfo> lastDocsSnapshot;
         private IReadOnlyList<TabRuleMatcher.CompiledRule> lastRulesSnapshot;
@@ -70,7 +75,15 @@ namespace SSMS_EnvTabs
             }
             resolveRetryCount = 0;
             resolveRetryScheduled = false;
-            EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - ConfigPath='{configPath}'");
+
+            var targetPaths = ResolveWriteTargetPaths(configPath);
+            if (targetPaths.Count == 0)
+            {
+                EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - No valid target paths after resolution. Skipping.");
+                return;
+            }
+
+            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - PathSource='{resolvedConfigPathSource ?? "unknown"}', Primary='{configPath}', Targets={targetPaths.Count}");
 
             try
             {
@@ -86,18 +99,87 @@ namespace SSMS_EnvTabs
             var rulesSnapshot = safeRules;
             var manualRulesSnapshot = manualRules;
             var groupToPathsSnapshot = groupToPaths;
-            var configPathSnapshot = configPath;
+            var targetPathsSnapshot = targetPaths;
 
             _ = System.Threading.Tasks.Task.Run(() =>
             {
                 try
                 {
-                    string newContent = BuildConfigContent(configPathSnapshot, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
-                    WriteIfChanged(configPathSnapshot, newContent);
+                    if (targetPathsSnapshot.Count == 0)
+                    {
+                        return;
+                    }
+
+                    string primaryPath = targetPathsSnapshot[0];
+                    string primaryContent = BuildConfigContent(primaryPath, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
+                    WriteIfChanged(primaryPath, primaryContent);
+
+                    for (int i = 1; i < targetPathsSnapshot.Count; i++)
+                    {
+                        string targetPath = targetPathsSnapshot[i];
+                        string newContent = BuildConfigContent(targetPath, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
+                        WriteIfChanged(targetPath, newContent);
+                    }
                 }
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Background write failed: {ex.Message}");
+                }
+            });
+        }
+
+        internal void RecordConfigPathHintFromMoniker(string moniker, string source)
+        {
+            if (string.IsNullOrWhiteSpace(moniker) || !Path.IsPathRooted(moniker))
+            {
+                return;
+            }
+
+            string fileName = Path.GetFileName(moniker);
+            if (!string.Equals(fileName, "ColorByRegexConfig.txt", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (!File.Exists(moniker) || !HasSiblingVFolder(moniker))
+            {
+                return;
+            }
+
+            if (string.Equals(commandCapturedConfigPath, moniker, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            commandCapturedConfigPath = moniker;
+            resolvedConfigPath = moniker;
+            resolvedConfigPathSource = "command-capture";
+            resolvedFallbackConfigPaths = null;
+
+            EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::RecordConfigPathHintFromMoniker - Captured from {source}: '{moniker}'");
+
+            if (ThreadHelper.CheckAccess())
+            {
+                if (lastDocsSnapshot != null)
+                {
+                    UpdateFromSnapshot(lastDocsSnapshot, lastRulesSnapshot, lastManualRulesSnapshot);
+                }
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (lastDocsSnapshot != null)
+                    {
+                        UpdateFromSnapshot(lastDocsSnapshot, lastRulesSnapshot, lastManualRulesSnapshot);
+                    }
+                }
+                catch
+                {
+                    // Best effort.
                 }
             });
         }
@@ -625,13 +707,27 @@ namespace SSMS_EnvTabs
                 .ToList();
         }
 
-        private static void WriteIfChanged(string path, string content)
+        private static bool WriteIfChanged(string path, string content)
         {
-            string existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
-            if (string.Equals(NormalizeNewlines(existing), NormalizeNewlines(content ?? string.Empty), StringComparison.Ordinal))
+            string normalizedTarget = NormalizeNewlines(content ?? string.Empty);
+            string existing = null;
+            try
+            {
+                existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+            }
+            catch (IOException)
+            {
+                existing = null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                existing = null;
+            }
+
+            if (existing != null && string.Equals(NormalizeNewlines(existing), normalizedTarget, StringComparison.Ordinal))
             {
                 EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::WriteIfChanged - No changes detected for '{path}'.");
-                return;
+                return false;
             }
 
             const int maxAttempts = 6;
@@ -658,7 +754,7 @@ namespace SSMS_EnvTabs
                         File.Move(tmp, path);
                     }
 
-                    return;
+                    return true;
                 }
                 catch (IOException) when (attempt < maxAttempts)
                 {
@@ -669,6 +765,8 @@ namespace SSMS_EnvTabs
                     Thread.Sleep(150 * attempt);
                 }
             }
+
+            return false;
         }
 
         private static string NormalizeNewlines(string text)
@@ -720,8 +818,24 @@ namespace SSMS_EnvTabs
 
         private string ResolveConfigPath(IEnumerable<string> monikers)
         {
-            if (!string.IsNullOrWhiteSpace(resolvedConfigPath) && File.Exists(resolvedConfigPath))
+            if (!string.IsNullOrWhiteSpace(resolvedConfigPath))
             {
+                if (File.Exists(resolvedConfigPath) && HasSiblingVFolder(resolvedConfigPath))
+                {
+                    return resolvedConfigPath;
+                }
+
+                EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::ResolveConfigPath - Clearing stale cached path: '{resolvedConfigPath}'");
+                resolvedConfigPath = null;
+                resolvedConfigPathSource = null;
+                resolvedFallbackConfigPaths = null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(commandCapturedConfigPath) && File.Exists(commandCapturedConfigPath) && HasSiblingVFolder(commandCapturedConfigPath))
+            {
+                resolvedConfigPath = commandCapturedConfigPath;
+                resolvedConfigPathSource = "command-capture";
+                resolvedFallbackConfigPaths = null;
                 return resolvedConfigPath;
             }
 
@@ -732,11 +846,66 @@ namespace SSMS_EnvTabs
                 if (!string.IsNullOrWhiteSpace(candidate))
                 {
                     resolvedConfigPath = candidate;
+                    resolvedConfigPathSource = "moniker";
+                    resolvedFallbackConfigPaths = null;
                     return candidate;
                 }
             }
 
             return null;
+        }
+
+        private List<string> ResolveWriteTargetPaths(string primaryPath)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrWhiteSpace(primaryPath))
+            {
+                return result;
+            }
+
+            if (IsValidConfigPath(primaryPath))
+            {
+                result.Add(primaryPath);
+            }
+
+            bool shouldFanout = string.Equals(resolvedConfigPathSource, "temp-scan", StringComparison.OrdinalIgnoreCase)
+                && resolvedFallbackConfigPaths != null
+                && resolvedFallbackConfigPaths.Count > 1;
+
+            if (!shouldFanout)
+            {
+                return result;
+            }
+
+            foreach (string candidate in resolvedFallbackConfigPaths)
+            {
+                if (result.Count >= MaxFanoutTargets)
+                {
+                    break;
+                }
+
+                if (string.IsNullOrWhiteSpace(candidate) || !IsValidConfigPath(candidate))
+                {
+                    continue;
+                }
+
+                if (!result.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                {
+                    result.Add(candidate);
+                }
+            }
+
+            if (result.Count > 1)
+            {
+                EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::ResolveWriteTargetPaths - Ambiguous temp targets detected; fan-out enabled ({result.Count} target(s)).");
+            }
+
+            return result;
+        }
+
+        private static bool IsValidConfigPath(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path) && File.Exists(path) && HasSiblingVFolder(path);
         }
 
         private static string TryGetConfigPathFromMoniker(string moniker)
@@ -792,23 +961,23 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static string TryScanTempForConfig(DateTime? referenceUtc)
+        private static List<string> TryScanTempForConfigCandidates(DateTime? referenceUtc)
         {
+            var candidates = new List<string>();
+
             try
             {
                 if (!referenceUtc.HasValue)
                 {
                     EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::TryScanTempForConfig - No firstConnectedDocSeenUtc; skipping temp scan.");
-                    return null;
+                    return candidates;
                 }
 
                 string temp = Path.GetTempPath();
                 if (string.IsNullOrWhiteSpace(temp) || !Directory.Exists(temp))
                 {
-                    return null;
+                    return candidates;
                 }
-
-                // SSMS places the file in a GUID-named Temp subdirectory.
 
                 var dirs = Directory.GetDirectories(temp)
                     .Where(d => IsGuidDirectoryName(Path.GetFileName(d)))
@@ -816,8 +985,7 @@ namespace SSMS_EnvTabs
                     .OrderBy(d => d.CreatedUtc)
                     .ToList();
 
-                string fallbackCandidate = null;
-                DateTime fallbackLastWriteUtc = DateTime.MinValue;
+                var scored = new List<(string Path, string GuidName, DateTime LastWriteUtc, bool InWindow)>();
 
                 foreach (var entry in dirs)
                 {
@@ -825,41 +993,25 @@ namespace SSMS_EnvTabs
                     {
                         string candidate = Path.Combine(entry.Dir, "ColorByRegexConfig.txt");
                         bool fileExists = File.Exists(candidate);
-                        bool hasVersionFolder = fileExists && HasSiblingVFolder(candidate);
-
-                        if (fileExists)
+                        if (!fileExists)
                         {
-                            DateTime candidateLastWriteUtc = File.GetLastWriteTimeUtc(candidate);
-                            bool preferAsFallback = hasVersionFolder || string.IsNullOrWhiteSpace(fallbackCandidate);
-                            if (preferAsFallback && candidateLastWriteUtc > fallbackLastWriteUtc)
-                            {
-                                fallbackLastWriteUtc = candidateLastWriteUtc;
-                                fallbackCandidate = candidate;
-                            }
+                            continue;
                         }
 
+                        bool hasVersionFolder = HasSiblingVFolder(candidate);
                         DateTime dirCreateUtc = entry.CreatedUtc;
+                        DateTime candidateLastWriteUtc = File.GetLastWriteTimeUtc(candidate);
                         double deltaSeconds = (dirCreateUtc - referenceUtc.Value).TotalSeconds;
-
-                        // Skip folders outside the creation window.
-                        if (deltaSeconds < -CreationSkewSeconds)
-                        {
-                            continue;
-                        }
-
-                        if (deltaSeconds > CreationMaxWindowSeconds)
-                        {
-                            continue;
-                        }
+                        bool inWindow = deltaSeconds >= -CreationSkewSeconds && deltaSeconds <= CreationMaxWindowSeconds;
 
                         EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - FirstDocSeenUtc={referenceUtc:O}, RegexFolderCreateUtc={dirCreateUtc:O}, DeltaSeconds={deltaSeconds:0.###}, FileExists={fileExists}, Folder='{entry.Dir}'");
-                        if (fileExists)
-                        {
-                            if (hasVersionFolder)
-                            {
-                                return candidate;
-                            }
 
+                        if (hasVersionFolder)
+                        {
+                            scored.Add((candidate, Path.GetFileName(entry.Dir), candidateLastWriteUtc, inWindow));
+                        }
+                        else
+                        {
                             EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - Skipping candidate (missing v# folder): '{candidate}'");
                         }
                     }
@@ -869,19 +1021,55 @@ namespace SSMS_EnvTabs
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(fallbackCandidate))
+                var ordered = scored
+                    .OrderByDescending(x => x.InWindow)
+                    .ThenByDescending(x => x.LastWriteUtc)
+                    .ThenBy(x => x.GuidName, StringComparer.OrdinalIgnoreCase)
+                    .Select(x => x.Path)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (ordered.Count == 0)
                 {
-                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - Strict creation-window match failed. Using latest valid temp config by last-write: '{fallbackCandidate}', LastWriteUtc={fallbackLastWriteUtc:O}");
-                    return fallbackCandidate;
+                    EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - No candidate found. FirstDocSeenUtc={referenceUtc:O}");
+                    return candidates;
                 }
 
-                EnvTabsLog.Verbose($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - No candidate found. FirstDocSeenUtc={referenceUtc:O}");
-                return null;
+                candidates.AddRange(ordered);
+
+                if (candidates.Count > 1)
+                {
+                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::TryScanTempForConfig - Found {candidates.Count} valid temp candidates; primary will be selected deterministically.");
+                }
+
+                return candidates;
             }
             catch
             {
-                return null;
+                return candidates;
             }
+        }
+
+        private static string SelectPrimaryTempCandidate(List<string> candidates)
+        {
+            return candidates?.FirstOrDefault(path => IsValidConfigPath(path));
+        }
+
+        private void CacheTempScanCandidates(List<string> candidates)
+        {
+            string primary = SelectPrimaryTempCandidate(candidates);
+            if (string.IsNullOrWhiteSpace(primary))
+            {
+                return;
+            }
+
+            resolvedConfigPath = primary;
+            resolvedConfigPathSource = "temp-scan";
+            resolvedFallbackConfigPaths = candidates
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxFanoutTargets)
+                .ToList();
         }
 
         private void StartTempScanIfNeeded()
@@ -895,14 +1083,14 @@ namespace SSMS_EnvTabs
             {
                 try
                 {
-                    string fallback = TryScanTempForConfig(firstDocSeenUtc);
-                    if (string.IsNullOrWhiteSpace(fallback))
+                    List<string> candidates = TryScanTempForConfigCandidates(firstDocSeenUtc);
+                    if (candidates == null || candidates.Count == 0)
                     {
                         return;
                     }
 
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    resolvedConfigPath = fallback;
+                    CacheTempScanCandidates(candidates);
                     if (lastDocsSnapshot != null)
                     {
                         UpdateFromSnapshot(lastDocsSnapshot, lastRulesSnapshot, lastManualRulesSnapshot);

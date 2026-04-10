@@ -627,7 +627,6 @@ namespace SSMS_EnvTabs
                     "timeout /t 2 /nobreak >nul" + Environment.NewLine +
                     "echo." + Environment.NewLine +
                     "start \"\" %installer% /quiet /uninstall:" + VsixId + Environment.NewLine +
-                    "powershell -NoProfile -EncodedCommand " + uninstallPsEncoded + Environment.NewLine +
                     "start \"\" %installer% /quiet /uninstall:" + LegacyVsixId + Environment.NewLine +
                     "powershell -NoProfile -EncodedCommand " + uninstallPsEncoded + Environment.NewLine +
                     "start \"\" %installer% /quiet %vsix%" + Environment.NewLine +

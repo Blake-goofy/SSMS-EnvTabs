@@ -37,10 +37,6 @@ SSMS EnvTabs is a Visual Studio Extension (VSIX) for SQL Server Management Studi
 - **Runtime Log**: The extension writes its own log to `%LocalAppData%\SSMS EnvTabs\runtime.log` via `EnvTabsLog.cs`. Check this first for logic errors. **Note: This file logging is for development only and will be removed in the final release.**
 - **ActivityLog**: Standard VS activity log is at `%AppData%\Microsoft\SQL Server Management Studio\...\ActivityLog.xml`.
 
-### Build & Deploy
-- **Build**: Uses standard MSBuild with VS SDK targets. **Never attempt to build the project using tools. The user will handle building and installing via Visual Studio.**
-- **Install**: Use `VSIXInstaller.exe` manually or via script (see `dev\references.md`) to install the `.vsix` into SSMS.
-
 ## Project Conventions
 
 ### Threading
