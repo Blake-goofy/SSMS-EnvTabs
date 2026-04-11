@@ -155,6 +155,24 @@
             <Setter Property="HorizontalAlignment" Value="Right" />
         </Style>
 
+        <Style x:Key="HoverRevealActionPanelStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="HoverRevealReservedSpaceActionPanelStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Hidden" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="OptionRowGridStyle" TargetType="Grid">
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="Margin" Value="16,8,0,8" />
@@ -475,12 +493,14 @@
                                 <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Logging" />
                                 <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs writes runtime log entries for troubleshooting." />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                <CheckBox x:Name="LoggingToggle" Style="{StaticResource SwitchToggleStyle}" HorizontalAlignment="Right" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                 <Button x:Name="CopyLogPathButton"
                                         Content="Copy log path"
                                         Style="{StaticResource InlineActionButtonStyle}"
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Center"
                                         ToolTip="Copy runtime.log path to clipboard" />
+                                <CheckBox x:Name="LoggingToggle" Style="{StaticResource SwitchToggleStyle}" HorizontalAlignment="Right" />
                             </StackPanel>
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
@@ -536,6 +556,32 @@
                                 <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs removes the .sql suffix from saved file names during tab rename formatting." />
                             </StackPanel>
                             <CheckBox Grid.Column="1" x:Name="RemoveDotSqlToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Color line indicator" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs colors the editor line indicator to match the active connection group." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="LineIndicatorColorToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Color status bar" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs colors the query window status bar to match the active connection group." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="StatusBarColorToggle" Style="{StaticResource SwitchToggleStyle}" />
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
 

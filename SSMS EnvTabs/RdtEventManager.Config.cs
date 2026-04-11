@@ -111,6 +111,34 @@ namespace SSMS_EnvTabs
             }
         }
 
+        private void StartTempColorConfigWatcher()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            try
+            {
+                string tempRoot = Path.GetTempPath();
+                if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))
+                {
+                    return;
+                }
+
+                tempColorConfigWatcher?.Dispose();
+                tempColorConfigWatcher = new FileSystemWatcher(tempRoot, "ColorByRegexConfig.txt");
+                tempColorConfigWatcher.IncludeSubdirectories = true;
+                tempColorConfigWatcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime | NotifyFilters.DirectoryName;
+                tempColorConfigWatcher.Created += OnTempColorConfigCreated;
+                tempColorConfigWatcher.Error += OnTempColorConfigWatcherError;
+                tempColorConfigWatcher.EnableRaisingEvents = true;
+
+                EnvTabsLog.Verbose($"RdtEventManager.Config.cs::StartTempColorConfigWatcher - Watching '{tempRoot}' recursively for ColorByRegexConfig.txt creation.");
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Temp color config watcher setup failed: {ex.Message}");
+            }
+        }
+
         private void LogColorSnapshot(string reason)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -148,6 +176,94 @@ namespace SSMS_EnvTabs
         private void OnConfigRenamed(object sender, RenamedEventArgs e)
         {
             OnConfigChanged(sender, e);
+        }
+
+        [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]
+        private void OnTempColorConfigCreated(object sender, FileSystemEventArgs e)
+        {
+            QueueObservedColorConfigCapture(e?.FullPath, $"TempWatcher:{e?.ChangeType}");
+        }
+
+        [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method only logs.")]
+        private void OnTempColorConfigWatcherError(object sender, ErrorEventArgs e)
+        {
+            try
+            {
+                string message = e?.GetException()?.Message;
+                EnvTabsLog.Info($"Temp color config watcher error: {message ?? "Unknown watcher failure."}");
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
+
+        private void QueueObservedColorConfigCapture(string path, string source)
+        {
+            if (!IsObservedTempColorConfigPath(path))
+            {
+                return;
+            }
+
+            _ = package.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    EnvTabsLog.Verbose($"RdtEventManager.Config.cs::QueueObservedColorConfigCapture - {source} '{path}'");
+                    await Task.Delay(200).ConfigureAwait(false);
+                    await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    colorWriter.RecordConfigPathHintFromMoniker(path, source);
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Observed temp color config capture failed: {ex.Message}");
+                }
+            });
+        }
+
+        private static bool IsObservedTempColorConfigPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path))
+            {
+                return false;
+            }
+
+            if (!string.Equals(Path.GetFileName(path), "ColorByRegexConfig.txt", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string tempRoot = Path.GetTempPath();
+            if (string.IsNullOrWhiteSpace(tempRoot))
+            {
+                return false;
+            }
+
+            try
+            {
+                string fullPath = Path.GetFullPath(path);
+                if (!fullPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                var current = new DirectoryInfo(Path.GetDirectoryName(fullPath));
+                while (current != null && current.FullName.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (Guid.TryParse(current.Name, out _))
+                    {
+                        return true;
+                    }
+
+                    current = current.Parent;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
         }
 
         [SuppressMessage("Usage", "VSTHRD010", Justification = "FileSystemWatcher callbacks are off-thread; this method marshals as needed.")]
@@ -615,6 +731,7 @@ namespace SSMS_EnvTabs
                     if (!IsColorUpdateSuppressed())
                     {
                         colorWriter.UpdateFromSnapshot(docs, rules, manualRules);
+                        RefreshOpenDocumentVisuals(docs, rules, manualRules, config.Settings, "ConfigReload");
                     }
                     else
                     {
@@ -854,10 +971,49 @@ namespace SSMS_EnvTabs
             {
                 var docs = GetOpenDocumentsSnapshot();
                 colorWriter.UpdateFromSnapshot(docs, rules, manualRules);
+                RefreshOpenDocumentVisuals(docs, rules, manualRules, config.Settings, reason);
             }
             catch (Exception ex)
             {
                 EnvTabsLog.Info($"ColorByRegex update failed ({reason}): {ex.Message}");
+            }
+        }
+
+        private void RefreshOpenDocumentVisuals(
+            System.Collections.Generic.IReadOnlyList<OpenDocumentInfo> docs,
+            System.Collections.Generic.IReadOnlyList<TabRuleMatcher.CompiledRule> rules,
+            System.Collections.Generic.IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules,
+            TabGroupSettings settings,
+            string reason)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (docs == null || docs.Count == 0 || settings == null)
+            {
+                return;
+            }
+
+            foreach (var doc in docs)
+            {
+                if (doc?.Frame == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    bool lineIndicatorResolved = TryApplyLineIndicatorColor(doc.Cookie, doc.Frame, doc.Moniker, rules, manualRules, settings);
+                    TryApplyStatusBarColor(doc.Cookie, doc.Frame, doc.Moniker, rules, manualRules, settings);
+
+                    if (!lineIndicatorResolved)
+                    {
+                        ScheduleLineIndicatorRetry(doc.Cookie, $"{reason}:VisualRefresh");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Verbose($"Visual refresh failed ({reason}) cookie={doc.Cookie}: {ex.Message}");
+                }
             }
         }
     }

@@ -101,6 +101,7 @@ namespace SSMS_EnvTabs
                 TabRenamer.ForgetCookie(docCookie);
                 renameRetryCounts.Remove(docCookie);
                 lineIndicatorRetryCounts.Remove(docCookie);
+                lineIndicatorPreferEditorScopeByCookie.Remove(docCookie);
                 lastConnectionByCookie.Remove(docCookie);
                 lastCaptionByCookie.Remove(docCookie);
 

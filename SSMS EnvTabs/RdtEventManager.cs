@@ -31,10 +31,12 @@ namespace SSMS_EnvTabs
 
         private readonly Dictionary<uint, int> renameRetryCounts = new Dictionary<uint, int>();
         private readonly Dictionary<uint, int> lineIndicatorRetryCounts = new Dictionary<uint, int>();
+        private readonly Dictionary<uint, bool> lineIndicatorPreferEditorScopeByCookie = new Dictionary<uint, bool>();
         private readonly Dictionary<uint, (string Server, string Database)> lastConnectionByCookie = new Dictionary<uint, (string Server, string Database)>();
         private readonly Dictionary<uint, string> lastCaptionByCookie = new Dictionary<uint, string>();
         private FileSystemWatcher configWatcher;
         private FileSystemWatcher groupColorWatcher;
+        private FileSystemWatcher tempColorConfigWatcher;
         private CancellationTokenSource debounceCts;
         private readonly object debounceLock = new object();
         private CancellationTokenSource groupColorDebounceCts;
@@ -131,6 +133,8 @@ namespace SSMS_EnvTabs
             
             try
             {
+                StartTempColorConfigWatcher();
+
                 string configPath = TabGroupConfigLoader.GetUserConfigPath();
                 string configDir = Path.GetDirectoryName(configPath);
                 if (Directory.Exists(configDir))
@@ -162,11 +166,13 @@ namespace SSMS_EnvTabs
                 connectionPollTimer = null;
                 configWatcher?.Dispose();
                 groupColorWatcher?.Dispose();
+                tempColorConfigWatcher?.Dispose();
                 debounceCts?.Cancel();
                 debounceCts?.Dispose();
                 groupColorDebounceCts?.Cancel();
                 groupColorDebounceCts?.Dispose();
                 lineIndicatorRetryCounts.Clear();
+                lineIndicatorPreferEditorScopeByCookie.Clear();
             }
             catch (Exception ex)
             {
@@ -356,6 +362,7 @@ namespace SSMS_EnvTabs
                 if (frame != null)
                 {
                     lineIndicatorResolved = TryApplyLineIndicatorColor(docCookie, frame, frameMoniker, rules, manualRules, config.Settings);
+                    TryApplyStatusBarColor(docCookie, frame, frameMoniker, rules, manualRules, config.Settings);
                 }
             }
             catch (Exception ex)

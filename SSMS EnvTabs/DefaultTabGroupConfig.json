@@ -17,7 +17,8 @@
     "newQueryRenameStyle": "[#]. [groupName]",
     "savedFileRenameStyle": "[filename]",
     "enableRemoveDotSql": true,
-    "enableLineIndicatorColor": false
+    "enableLineIndicatorColor": true,
+    "enableStatusBarColor": true
   },
   "manualRegexLines": null,
   "serverAlias": {

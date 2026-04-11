@@ -100,7 +100,21 @@ namespace SSMS_EnvTabs
                     {
                         UseSimpleDictionaryFormat = true
                     });
-                    return serializer.ReadObject(stream) as TabGroupConfig;
+                    var config = serializer.ReadObject(stream) as TabGroupConfig;
+                    if (config == null)
+                    {
+                        return null;
+                    }
+
+                    var defaultConfig = LoadDefaultConfigOrFallback();
+                    var migratedSettings = TabGroupConfigDefaults.ApplyMissingSettingDefaults(config, jsonText, defaultConfig);
+                    if (migratedSettings.Count > 0)
+                    {
+                        SaveConfig(config);
+                        EnvTabsLog.Info($"Config migration restored missing settings from defaults: {string.Join(", ", migratedSettings)}");
+                    }
+
+                    return config;
                 }
             }
             catch (Exception ex)
@@ -108,6 +122,36 @@ namespace SSMS_EnvTabs
                 EnvTabsLog.Info($"Config load failed: {ex.Message}");
                 return null;
             }
+        }
+
+        private static TabGroupConfig LoadDefaultConfigOrFallback()
+        {
+            string defaultJson = ReadDefaultConfigJsonOrNull();
+            if (!string.IsNullOrWhiteSpace(defaultJson))
+            {
+                try
+                {
+                    byte[] utf8Bytes = Encoding.UTF8.GetBytes(defaultJson);
+                    using (var stream = new MemoryStream(utf8Bytes))
+                    {
+                        var serializer = new DataContractJsonSerializer(typeof(TabGroupConfig), new DataContractJsonSerializerSettings
+                        {
+                            UseSimpleDictionaryFormat = true
+                        });
+                        var defaultConfig = serializer.ReadObject(stream) as TabGroupConfig;
+                        if (defaultConfig != null)
+                        {
+                            return defaultConfig;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Default config deserialize failed: {ex.Message}");
+                }
+            }
+
+            return TabGroupConfigDefaults.CreateFallbackDefaultConfig();
         }
 
         internal static void UpdateConfigVersionIfNeeded(TabGroupConfig config, Version currentVersion)

@@ -12,8 +12,11 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace SSMS_EnvTabs
@@ -24,6 +27,7 @@ namespace SSMS_EnvTabs
         private const string IndicatorTypeFullName = "Microsoft.VisualStudio.Shell.Controls.Indicator";
         private const string AdornmentLayerTypeName = "AdornmentLayer";
         private const string AdornmentLayerTypeFullName = "Microsoft.VisualStudio.Text.Editor.Implementation.AdornmentLayer";
+        private const uint CommonControlSetBkColorMessage = 0x2001;
         private static readonly string[] PreferredTextViewMarginNames = new[]
         {
             "Glyph",
@@ -32,6 +36,7 @@ namespace SSMS_EnvTabs
             "Indicator",
             "SpacerMargin"
         };
+        private const string StatusBarLeftContainerName = "PART_StatusBarLeftFrameControlContainer";
 
         private static readonly string[] IndicatorPaletteHex = new[]
         {
@@ -40,6 +45,9 @@ namespace SSMS_EnvTabs
             "#bdbcbc", "#cbcc38", "#2aa0a4", "#d957a7",
             "#6bc6a5", "#946a5b", "#6a8ec6", "#e0a3a5"
         };
+        private static readonly object statusBarProbeLock = new object();
+        private static readonly HashSet<string> loggedStatusBarProbeKeys = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> loggedStatusStripInventoryKeys = new HashSet<string>(StringComparer.Ordinal);
 
         private IComponentModel componentModel;
         private IVsEditorAdaptersFactoryService editorAdaptersFactoryService;
@@ -57,7 +65,7 @@ namespace SSMS_EnvTabs
 
             if (settings?.EnableLineIndicatorColor != true || settings.EnableAutoColor != true)
             {
-                TryClearLineIndicatorColor(frame);
+                // Feature disabled: do not modify any indicator visuals.
                 return true;
             }
 
@@ -77,22 +85,15 @@ namespace SSMS_EnvTabs
                 return true;
             }
 
-            if (!TryFindLineIndicatorElements(frame, out List<DependencyObject> indicators) || indicators.Count == 0)
+            if (!TryFindLineIndicatorElements(docCookie, frame, out List<DependencyObject> indicators) || indicators.Count == 0)
             {
                 EnvTabsLog.Info($"LineIndicator: editor indicator not ready cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value}");
                 return false;
             }
 
-            var targetIndicators = SelectLikelyLineIndicators(indicators);
-            if (targetIndicators.Count == 0)
-            {
-                EnvTabsLog.Info($"LineIndicator: no line-indicator candidates matched cookie={docCookie} server='{server}' db='{database}' totalIndicators={indicators.Count}");
-                return false;
-            }
-
             Brush brush = BuildIndicatorBrush(colorIndex.Value);
             int appliedCount = 0;
-            foreach (DependencyObject indicator in targetIndicators)
+            foreach (DependencyObject indicator in indicators)
             {
                 if (TrySetIndicatorBackground(indicator, brush))
                 {
@@ -100,9 +101,516 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            EnvTabsLog.Info($"LineIndicator: selected target type='{DescribeIndicator(targetIndicators[0])}'");
-            EnvTabsLog.Info($"LineIndicator: {(appliedCount > 0 ? "applied" : "failed")} cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value} indicators={indicators.Count} selected={targetIndicators.Count} updated={appliedCount}");
+            EnvTabsLog.Info($"LineIndicator: target type='{DescribeIndicator(indicators[0])}'");
+            EnvTabsLog.Info($"LineIndicator: {(appliedCount > 0 ? "applied" : "failed")} cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value} indicators={indicators.Count} updated={appliedCount}");
             return appliedCount > 0;
+        }
+
+        private void TryApplyStatusBarColor(uint docCookie, IVsWindowFrame frame, string moniker, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules, TabGroupSettings settings)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (frame == null || settings?.EnableStatusBarColor != true || settings.EnableAutoColor != true)
+            {
+                return;
+            }
+
+            if (!TryGetConnectionInfo(frame, out string server, out string database) || string.IsNullOrWhiteSpace(server))
+            {
+                return;
+            }
+
+            var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
+            var matchedRule = TabRuleMatcher.MatchRule(rules, server, database);
+            int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
+            if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= IndicatorPaletteHex.Length)
+            {
+                return;
+            }
+
+            if (TryApplyDocViewStatusBarColor(frame, colorIndex.Value, out string docViewTarget))
+            {
+                EnvTabsLog.Info($"StatusBarColor: applied cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value} mode=docview target='{docViewTarget}'");
+                return;
+            }
+
+            EnvTabsLog.Info($"StatusBarColor: target not found cookie={docCookie} server='{server}' db='{database}'");
+        }
+
+        private bool TryApplyDocViewStatusBarColor(IVsWindowFrame frame, int colorIndex, out string targetDescription)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            targetDescription = null;
+            if (frame == null || colorIndex < 0 || colorIndex >= IndicatorPaletteHex.Length)
+            {
+                return false;
+            }
+
+            if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView) != VSConstants.S_OK || docView == null)
+            {
+                return false;
+            }
+
+            if ((TryGetReflectionMemberValue(docView, "statusBar", out object statusBarObject)
+                    || TryGetReflectionMemberValue(docView, "StatusBar", out statusBarObject))
+                && statusBarObject is System.Windows.Forms.StatusStrip statusStrip
+                && TryApplyWinFormsStatusStripColor(statusStrip, colorIndex, out string textColorName))
+            {
+                targetDescription = "DocView.statusBar; control=" + statusStrip.GetType().FullName + "; text=" + textColorName;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryApplyWinFormsStatusStripColor(System.Windows.Forms.StatusStrip statusStrip, int colorIndex, out string textColorName)
+        {
+            textColorName = null;
+            if (statusStrip == null || statusStrip.IsDisposed || colorIndex < 0 || colorIndex >= IndicatorPaletteHex.Length)
+            {
+                return false;
+            }
+
+            var backColor = System.Drawing.ColorTranslator.FromHtml(IndicatorPaletteHex[colorIndex]);
+            var foreColor = GetReadableStatusTextColor(backColor);
+            var renderer = new SolidStatusStripRenderer(backColor, foreColor);
+            textColorName = IsNearBlack(foreColor) ? "black" : "white";
+
+            LogStatusStripItemsOnce(statusStrip);
+
+            statusStrip.SuspendLayout();
+            try
+            {
+                statusStrip.RenderMode = System.Windows.Forms.ToolStripRenderMode.Professional;
+                statusStrip.Renderer = renderer;
+                statusStrip.BackColor = backColor;
+                statusStrip.ForeColor = foreColor;
+
+                ApplyStatusStripItemColors(statusStrip.Items, backColor, foreColor);
+            }
+            finally
+            {
+                statusStrip.ResumeLayout(true);
+            }
+
+            statusStrip.Invalidate(true);
+            statusStrip.Refresh();
+            return true;
+        }
+
+        private static void ApplyStatusStripItemColors(System.Windows.Forms.ToolStripItemCollection items, System.Drawing.Color backColor, System.Drawing.Color foreColor)
+        {
+            if (items == null)
+            {
+                return;
+            }
+
+            foreach (System.Windows.Forms.ToolStripItem item in items)
+            {
+                item.BackColor = backColor;
+
+                if (ShouldOverrideStatusStripItemTextColor(item))
+                {
+                    item.ForeColor = foreColor;
+                }
+
+                if (item is System.Windows.Forms.ToolStripDropDownItem dropDownItem)
+                {
+                    ApplyStatusStripItemColors(dropDownItem.DropDownItems, backColor, foreColor);
+                }
+            }
+        }
+
+        private static bool ShouldOverrideStatusStripItemTextColor(System.Windows.Forms.ToolStripItem item)
+        {
+            return !IsSubtleStatusStripSeparator(item);
+        }
+
+        private static bool IsSubtleStatusStripSeparator(System.Windows.Forms.ToolStripItem item)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            if (item is System.Windows.Forms.ToolStripSeparator)
+            {
+                return true;
+            }
+
+            string probe = string.Join(" ", new[]
+            {
+                item.Name,
+                item.AccessibleName,
+                item.AccessibleDescription,
+                item.GetType().FullName
+            }.Where(value => !string.IsNullOrWhiteSpace(value))).ToLowerInvariant();
+
+            if (probe.Contains("separator"))
+            {
+                return true;
+            }
+
+            string text = (item.Text ?? string.Empty).Trim();
+            return text.Length == 1 && IsSeparatorGlyph(text[0]);
+        }
+
+        private static bool IsSeparatorGlyph(char value)
+        {
+            switch (value)
+            {
+                case '|':
+                case '\u00A6':
+                case '\u2502':
+                case '\u2503':
+                case '\u2506':
+                case '\u250A':
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static void LogStatusStripItemsOnce(System.Windows.Forms.StatusStrip statusStrip)
+        {
+            if (statusStrip == null)
+            {
+                return;
+            }
+
+            string key = (statusStrip.GetType().FullName ?? statusStrip.GetType().Name)
+                + "#"
+                + RuntimeHelpers.GetHashCode(statusStrip);
+
+            lock (statusBarProbeLock)
+            {
+                if (!loggedStatusStripInventoryKeys.Add(key))
+                {
+                    return;
+                }
+            }
+
+            var items = (statusStrip.Items ?? new System.Windows.Forms.ToolStripItemCollection(statusStrip, null))
+                .Cast<System.Windows.Forms.ToolStripItem>()
+                .Select(DescribeStatusStripItemForLog)
+                .ToList();
+
+            EnvTabsLog.Info("StatusBarColor: item inventory -> " + (items.Count == 0 ? "(none)" : string.Join(" | ", items)));
+        }
+
+        private static string DescribeStatusStripItemForLog(System.Windows.Forms.ToolStripItem item)
+        {
+            if (item == null)
+            {
+                return "<null>";
+            }
+
+            string text = item.Text ?? string.Empty;
+            string codes = text.Length == 0
+                ? "none"
+                : string.Join(",", text.Select(ch => ((int)ch).ToString("X4")));
+
+            return "type='" + (item.GetType().FullName ?? item.GetType().Name)
+                + "' name='" + (item.Name ?? string.Empty)
+                + "' text='" + text.Replace("'", "''")
+                + "' codes=[" + codes + "]"
+                + " preserveTextColor=" + IsSubtleStatusStripSeparator(item);
+        }
+
+        private static System.Drawing.Color GetReadableStatusTextColor(System.Drawing.Color backColor)
+        {
+            double contrastWithBlack = GetContrastRatio(backColor, System.Drawing.Color.Black);
+            double contrastWithWhite = GetContrastRatio(backColor, System.Drawing.Color.White);
+            return contrastWithBlack >= contrastWithWhite ? System.Drawing.Color.Black : System.Drawing.Color.White;
+        }
+
+        private static double GetContrastRatio(System.Drawing.Color a, System.Drawing.Color b)
+        {
+            double luminanceA = GetRelativeLuminance(a);
+            double luminanceB = GetRelativeLuminance(b);
+            double lighter = Math.Max(luminanceA, luminanceB);
+            double darker = Math.Min(luminanceA, luminanceB);
+            return (lighter + 0.05) / (darker + 0.05);
+        }
+
+        private static double GetRelativeLuminance(System.Drawing.Color color)
+        {
+            double r = GetLinearChannel(color.R / 255.0);
+            double g = GetLinearChannel(color.G / 255.0);
+            double b = GetLinearChannel(color.B / 255.0);
+            return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+        }
+
+        private static double GetLinearChannel(double channel)
+        {
+            return channel <= 0.03928
+                ? channel / 12.92
+                : Math.Pow((channel + 0.055) / 1.055, 2.4);
+        }
+
+        private static bool IsNearBlack(System.Drawing.Color color)
+        {
+            return color.R < 32 && color.G < 32 && color.B < 32;
+        }
+
+        private static bool TryGetReflectionMemberValue(object source, string memberName, out object value)
+        {
+            value = null;
+            if (source == null || string.IsNullOrWhiteSpace(memberName))
+            {
+                return false;
+            }
+
+            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Type type = source.GetType();
+
+            FieldInfo field = type.GetField(memberName, Flags);
+            if (field != null)
+            {
+                value = field.GetValue(source);
+                return value != null;
+            }
+
+            PropertyInfo property = type.GetProperty(memberName, Flags);
+            if (property != null && property.CanRead && property.GetIndexParameters().Length == 0)
+            {
+                value = property.GetValue(source, null);
+                return value != null;
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<object> ReflectChildren(object source)
+        {
+            if (source == null)
+            {
+                yield break;
+            }
+
+            foreach ((string _, object value) in EnumerateProbeMembers(source))
+            {
+                if (value != null)
+                {
+                    yield return value;
+                }
+            }
+        }
+
+        private static IEnumerable<object> EnumerateProbeObjectGraph(object root, int maxDepth, int maxNodes)
+        {
+            if (root == null || maxDepth < 0 || maxNodes <= 0)
+            {
+                yield break;
+            }
+
+            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            var queue = new Queue<(object Node, int Depth)>();
+            visited.Add(root);
+            queue.Enqueue((root, 0));
+
+            int visitedCount = 0;
+            while (queue.Count > 0 && visitedCount < maxNodes)
+            {
+                var current = queue.Dequeue();
+                visitedCount++;
+                yield return current.Node;
+
+                if (current.Depth >= maxDepth)
+                {
+                    continue;
+                }
+
+                foreach ((string _, object child) in EnumerateProbeMembers(current.Node))
+                {
+                    if (child == null || IsSimpleProbeType(child.GetType()) || !visited.Add(child))
+                    {
+                        continue;
+                    }
+
+                    queue.Enqueue((child, current.Depth + 1));
+                }
+            }
+        }
+
+        private sealed class SolidStatusStripRenderer : System.Windows.Forms.ToolStripProfessionalRenderer
+        {
+            public SolidStatusStripRenderer(System.Drawing.Color backColor, System.Drawing.Color foreColor)
+                : base(new SolidStatusStripColorTable(backColor, foreColor))
+            {
+                RoundedEdges = false;
+            }
+        }
+
+        private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+        {
+            public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
+
+            private ReferenceEqualityComparer()
+            {
+            }
+
+            public new bool Equals(object x, object y)
+            {
+                return ReferenceEquals(x, y);
+            }
+
+            public int GetHashCode(object obj)
+            {
+                return obj == null ? 0 : RuntimeHelpers.GetHashCode(obj);
+            }
+        }
+
+        private sealed class SolidStatusStripColorTable : System.Windows.Forms.ProfessionalColorTable
+        {
+            private readonly System.Drawing.Color backColor;
+            private readonly System.Drawing.Color foreColor;
+            private readonly System.Drawing.Color separatorDarkColor;
+            private readonly System.Drawing.Color separatorLightColor;
+
+            public SolidStatusStripColorTable(System.Drawing.Color backColor, System.Drawing.Color foreColor)
+            {
+                this.backColor = backColor;
+                this.foreColor = foreColor;
+                separatorDarkColor = BlendStatusStripColor(backColor, foreColor, 0.24);
+                separatorLightColor = BlendStatusStripColor(backColor, foreColor, 0.12);
+            }
+
+            public override System.Drawing.Color StatusStripGradientBegin => backColor;
+
+            public override System.Drawing.Color StatusStripGradientEnd => backColor;
+
+            public override System.Drawing.Color ToolStripGradientBegin => backColor;
+
+            public override System.Drawing.Color ToolStripGradientMiddle => backColor;
+
+            public override System.Drawing.Color ToolStripGradientEnd => backColor;
+
+            public override System.Drawing.Color ToolStripBorder => backColor;
+
+            public override System.Drawing.Color ImageMarginGradientBegin => backColor;
+
+            public override System.Drawing.Color ImageMarginGradientMiddle => backColor;
+
+            public override System.Drawing.Color ImageMarginGradientEnd => backColor;
+
+            public override System.Drawing.Color MenuItemBorder => backColor;
+
+            public override System.Drawing.Color MenuItemSelected => backColor;
+
+            public override System.Drawing.Color MenuItemSelectedGradientBegin => backColor;
+
+            public override System.Drawing.Color MenuItemSelectedGradientEnd => backColor;
+
+            public override System.Drawing.Color ButtonSelectedBorder => backColor;
+
+            public override System.Drawing.Color ButtonSelectedGradientBegin => backColor;
+
+            public override System.Drawing.Color ButtonSelectedGradientMiddle => backColor;
+
+            public override System.Drawing.Color ButtonSelectedGradientEnd => backColor;
+
+            public override System.Drawing.Color ButtonPressedBorder => backColor;
+
+            public override System.Drawing.Color ButtonPressedGradientBegin => backColor;
+
+            public override System.Drawing.Color ButtonPressedGradientMiddle => backColor;
+
+            public override System.Drawing.Color ButtonPressedGradientEnd => backColor;
+
+            public override System.Drawing.Color ButtonCheckedGradientBegin => backColor;
+
+            public override System.Drawing.Color ButtonCheckedGradientMiddle => backColor;
+
+            public override System.Drawing.Color ButtonCheckedGradientEnd => backColor;
+
+            public override System.Drawing.Color ButtonCheckedHighlight => backColor;
+
+            public override System.Drawing.Color ButtonCheckedHighlightBorder => backColor;
+
+            public override System.Drawing.Color CheckBackground => backColor;
+
+            public override System.Drawing.Color CheckPressedBackground => backColor;
+
+            public override System.Drawing.Color CheckSelectedBackground => backColor;
+
+            public override System.Drawing.Color GripDark => separatorDarkColor;
+
+            public override System.Drawing.Color GripLight => separatorLightColor;
+
+            public override System.Drawing.Color SeparatorDark => separatorDarkColor;
+
+            public override System.Drawing.Color SeparatorLight => separatorLightColor;
+        }
+
+        private static System.Drawing.Color BlendStatusStripColor(System.Drawing.Color background, System.Drawing.Color foreground, double foregroundWeight)
+        {
+            foregroundWeight = Math.Max(0.0, Math.Min(1.0, foregroundWeight));
+            double backgroundWeight = 1.0 - foregroundWeight;
+
+            int r = (int)Math.Round((background.R * backgroundWeight) + (foreground.R * foregroundWeight));
+            int g = (int)Math.Round((background.G * backgroundWeight) + (foreground.G * foregroundWeight));
+            int b = (int)Math.Round((background.B * backgroundWeight) + (foreground.B * foregroundWeight));
+
+            return System.Drawing.Color.FromArgb(255, r, g, b);
+        }
+
+        private static bool TrySetStatusBarBackground(DependencyObject target, Brush brush)
+        {
+            if (target == null || brush == null)
+            {
+                return false;
+            }
+
+            bool changed = false;
+
+            if (target is Control control)
+            {
+                control.Background = brush;
+                changed = true;
+            }
+
+            if (target is Border border)
+            {
+                border.Background = brush;
+                changed = true;
+            }
+
+            if (target is Panel panel)
+            {
+                panel.Background = brush;
+                changed = true;
+            }
+
+            if (target is System.Windows.Shapes.Shape shape)
+            {
+                shape.Fill = brush;
+                shape.Stroke = brush;
+                changed = true;
+            }
+
+            if (TrySetBrushProperty(target, "Background", brush))
+            {
+                changed = true;
+            }
+
+            if (TrySetBrushProperty(target, "BorderBrush", brush))
+            {
+                changed = true;
+            }
+
+            if (TrySetBrushProperty(target, "Fill", brush))
+            {
+                changed = true;
+            }
+
+            if (TrySetBrushProperty(target, "Stroke", brush))
+            {
+                changed = true;
+            }
+
+            return changed;
         }
 
         private static Brush BuildIndicatorBrush(int colorIndex)
@@ -209,13 +717,12 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            if (!TryFindLineIndicatorElements(frame, out List<DependencyObject> indicators) || indicators.Count == 0)
+            if (!TryFindLineIndicatorElements(0, frame, out List<DependencyObject> indicators) || indicators.Count == 0)
             {
                 return;
             }
 
-            var targetIndicators = SelectLikelyLineIndicators(indicators);
-            foreach (DependencyObject indicator in targetIndicators)
+            foreach (DependencyObject indicator in indicators)
             {
                 TryClearIndicatorBackground(indicator);
             }
@@ -308,252 +815,6 @@ namespace SSMS_EnvTabs
             return $"{type} name='{name}' w={fe.ActualWidth:0.##} h={fe.ActualHeight:0.##}";
         }
 
-        private static List<DependencyObject> SelectLikelyLineIndicators(List<DependencyObject> indicators)
-        {
-            var selected = new List<DependencyObject>();
-            if (indicators == null || indicators.Count == 0)
-            {
-                return selected;
-            }
-
-            var strictIndicators = indicators
-                .Where(IsIndicatorControl)
-                .Where(indicator => !IsRejectedLineIndicatorCandidate(indicator))
-                .ToList();
-
-            if (strictIndicators.Count == 0)
-            {
-                EnvTabsLog.Info("LineIndicator: strict indicator selection found 0 Indicator controls in editor scope.");
-                return selected;
-            }
-
-            var scored = new List<(DependencyObject Indicator, int Score, string Reason)>();
-            foreach (DependencyObject indicator in strictIndicators)
-            {
-                int score = ScoreLineIndicatorCandidate(indicator, out string reason);
-                scored.Add((indicator, score, reason));
-            }
-
-            if (scored.Count == 0)
-            {
-                return selected;
-            }
-
-            var ordered = scored
-                .OrderByDescending(c => c.Score)
-                .ThenBy(c => DescribeIndicator(c.Indicator), StringComparer.Ordinal)
-                .ToList();
-
-            EnvTabsLog.Info("LineIndicator: candidate scores -> " + string.Join(" | ", ordered.Select(c => $"{c.Score}:{DescribeIndicator(c.Indicator)}:{c.Reason}")));
-
-            var best = ordered.FirstOrDefault();
-            if (best.Indicator == null)
-            {
-                return selected;
-            }
-
-            if (best.Score < 2)
-            {
-                return selected;
-            }
-
-            if (!selected.Contains(best.Indicator))
-            {
-                selected.Add(best.Indicator);
-            }
-
-            return selected;
-        }
-
-        private static int ScoreLineIndicatorCandidate(DependencyObject indicator, out string reason)
-        {
-            reason = string.Empty;
-            if (!(indicator is FrameworkElement element))
-            {
-                reason = "not-framework-element";
-                return -100;
-            }
-
-            if (element.ActualWidth <= 0 || element.ActualHeight <= 0)
-            {
-                reason = "no-size";
-                return -100;
-            }
-
-            int score = 0;
-            var reasons = new List<string>();
-            string name = (element.Name ?? string.Empty).ToLowerInvariant();
-
-            if (name.Contains("accentrect"))
-            {
-                score -= 20;
-                reasons.Add("accentrect");
-            }
-
-            if (name.Contains("autohidetabselectedindicator"))
-            {
-                score -= 40;
-                reasons.Add("autohide-indicator");
-            }
-
-            if (name.Contains("indicator"))
-            {
-                score += 1;
-                reasons.Add("name-indicator");
-            }
-
-            if (element.ActualWidth <= 6)
-            {
-                score += 5;
-                reasons.Add("thin");
-            }
-            else if (element.ActualWidth <= 12)
-            {
-                score += 1;
-                reasons.Add("narrow");
-            }
-            else
-            {
-                score -= 5;
-                reasons.Add("wide");
-            }
-
-            if (element.ActualHeight >= 12 && element.ActualHeight <= 120)
-            {
-                score += 1;
-                reasons.Add("height-range");
-            }
-
-            if (element.ActualHeight >= 20)
-            {
-                score += 1;
-                reasons.Add("tall-ish");
-            }
-
-            if (element.ActualHeight >= 40 && element.ActualHeight <= 800)
-            {
-                score += 4;
-                reasons.Add("tall-marker-range");
-            }
-
-            if (TryGetElementLocation(element, out Point location))
-            {
-                if (location.Y >= 120)
-                {
-                    score += 8;
-                    reasons.Add("below-tab-strip");
-                }
-                else
-                {
-                    score -= 10;
-                    reasons.Add("near-top");
-                }
-
-                if (location.X <= 80)
-                {
-                    score += 3;
-                    reasons.Add("left-edge");
-                }
-                else if (location.X >= 260)
-                {
-                    score -= 2;
-                    reasons.Add("far-right");
-                }
-
-                if (TryIsNearBottomOfWindow(element, location, out bool nearBottom) && nearBottom)
-                {
-                    score -= 20;
-                    reasons.Add("near-bottom");
-                }
-            }
-
-            bool hasEditorAncestor = HasAncestorToken(element, "editor", "textview", "adornment", "margin", "scroll", "code");
-            bool hasTabAncestor = HasAncestorToken(element, "tab", "documentwell", "title", "header", "well");
-            bool hasToolWindowAncestor = HasAncestorToken(element, "autohide", "toolwindow", "objectexplorer");
-
-            if (element is System.Windows.Shapes.Rectangle)
-            {
-                score -= 6;
-                reasons.Add("rectangle-overlay");
-            }
-
-            if (hasEditorAncestor)
-            {
-                score += 4;
-                reasons.Add("editor-ancestor");
-            }
-
-            if (hasTabAncestor)
-            {
-                score -= 5;
-                reasons.Add("tab-ancestor");
-            }
-
-            if (hasToolWindowAncestor)
-            {
-                score -= 20;
-                reasons.Add("toolwindow-ancestor");
-            }
-
-            reason = string.Join(",", reasons);
-            return score;
-        }
-
-        private static bool IsRejectedLineIndicatorCandidate(DependencyObject indicator)
-        {
-            if (!(indicator is FrameworkElement element))
-            {
-                return true;
-            }
-
-            string name = (element.Name ?? string.Empty).ToLowerInvariant();
-            string typeName = (element.GetType().FullName ?? element.GetType().Name ?? string.Empty).ToLowerInvariant();
-            if (name.Contains("autohidetabselectedindicator") || name.Contains("accentrect"))
-            {
-                return true;
-            }
-
-            string probe = typeName + " " + name;
-            if (probe.Contains("statusbar") || probe.Contains("taskstatus") || probe.Contains("compartment"))
-            {
-                return true;
-            }
-
-            if (typeName.Contains("vstoolbarthumb") || typeName.Contains("vsbutton") || typeName.Contains("separator"))
-            {
-                return true;
-            }
-
-            if (name.Contains("thumbborder"))
-            {
-                return true;
-            }
-
-            if (TryGetElementLocation(element, out Point location) && location.Y < 100)
-            {
-                return true;
-            }
-
-            if (element.ActualWidth > 12)
-            {
-                return true;
-            }
-
-            if (TryGetElementLocation(element, out Point location2)
-                && TryIsNearBottomOfWindow(element, location2, out bool nearBottom)
-                && nearBottom)
-            {
-                return true;
-            }
-
-            if (HasAncestorToken(element, "autohide", "toolwindow", "objectexplorer"))
-            {
-                return true;
-            }
-
-            return false;
-        }
-
         private static bool IsIndicatorControl(DependencyObject candidate)
         {
             if (candidate == null)
@@ -567,77 +828,7 @@ namespace SSMS_EnvTabs
                 || string.Equals(typeName, IndicatorTypeName, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool TryIsNearBottomOfWindow(FrameworkElement element, Point location, out bool isNearBottom)
-        {
-            isNearBottom = false;
-            Window window = Window.GetWindow(element);
-            if (window == null || window.ActualHeight <= 0)
-            {
-                return false;
-            }
-
-            isNearBottom = location.Y >= (window.ActualHeight - 140);
-            return true;
-        }
-
-        private static bool HasAncestorToken(DependencyObject element, params string[] tokens)
-        {
-            DependencyObject current = element;
-            for (int depth = 0; depth < 16 && current != null; depth++)
-            {
-                string typeName = current.GetType().Name ?? string.Empty;
-                string name = (current as FrameworkElement)?.Name ?? string.Empty;
-                string probe = (typeName + " " + name).ToLowerInvariant();
-
-                for (int i = 0; i < (tokens?.Length ?? 0); i++)
-                {
-                    string token = tokens[i];
-                    if (!string.IsNullOrWhiteSpace(token) && probe.Contains(token.ToLowerInvariant()))
-                    {
-                        return true;
-                    }
-                }
-
-                try
-                {
-                    current = VisualTreeHelper.GetParent(current);
-                }
-                catch
-                {
-                    break;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool TryGetElementLocation(FrameworkElement element, out Point location)
-        {
-            location = new Point(double.NaN, double.NaN);
-            if (element == null)
-            {
-                return false;
-            }
-
-            Window window = Window.GetWindow(element);
-            if (window == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                GeneralTransform transform = element.TransformToAncestor(window);
-                location = transform.Transform(new Point(0, 0));
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool TryFindLineIndicatorElements(IVsWindowFrame frame, out List<DependencyObject> indicators)
+        private bool TryFindLineIndicatorElements(uint docCookie, IVsWindowFrame frame, out List<DependencyObject> indicators)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -649,23 +840,56 @@ namespace SSMS_EnvTabs
 
             try
             {
-                if (!TryResolveEditorScopedSearchRoots(frame, out List<DependencyObject> roots, out string resolutionSource))
+                if (docCookie != 0
+                    && lineIndicatorPreferEditorScopeByCookie.TryGetValue(docCookie, out bool preferEditorScope)
+                    && preferEditorScope)
+                {
+                    if (!TryResolveEditorScopedSearchRoots(frame, out List<DependencyObject> cachedRoots, out string cachedResolutionSource))
+                    {
+                        return false;
+                    }
+
+                    EnvTabsLog.Info($"LineIndicator: editor scope resolved via cached-fallback({cachedResolutionSource}) roots={cachedRoots.Count}");
+                    CollectIndicatorControls(cachedRoots, indicators);
+                    if (indicators.Count == 0)
+                    {
+                        lineIndicatorPreferEditorScopeByCookie.Remove(docCookie);
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info($"LineIndicator: editor scope discovered {indicators.Count} gutter candidate(s).");
+                        return true;
+                    }
+                }
+
+                if (!TryResolveIndicatorSearchRoots(frame, out List<DependencyObject> roots, out string resolutionSource))
                 {
                     return false;
                 }
 
                 EnvTabsLog.Info($"LineIndicator: editor scope resolved via {resolutionSource} roots={roots.Count}");
 
-                var seen = new HashSet<DependencyObject>();
-                foreach (DependencyObject root in roots)
+                CollectIndicatorControls(roots, indicators);
+
+                if (indicators.Count == 0
+                    && TryResolveEditorScopedSearchRoots(frame, out List<DependencyObject> fallbackRoots, out string fallbackResolutionSource))
                 {
-                    foreach (DependencyObject found in FindScopedLineIndicatorCandidates(root))
+                    CollectIndicatorControls(fallbackRoots, indicators);
+                    if (indicators.Count > 0)
                     {
-                        if (found != null && seen.Add(found))
+                        if (docCookie != 0)
                         {
-                            indicators.Add(found);
+                            lineIndicatorPreferEditorScopeByCookie[docCookie] = true;
                         }
+
+                        resolutionSource = resolutionSource + " -> fallback(" + fallbackResolutionSource + ")";
+                        EnvTabsLog.Info($"LineIndicator: exact indicator margin was empty; fallback editor scope found candidates via {fallbackResolutionSource} roots={fallbackRoots.Count}");
                     }
+                }
+
+                if (indicators.Count > 0 && docCookie != 0)
+                {
+                    lineIndicatorPreferEditorScopeByCookie.Remove(docCookie);
                 }
 
                 if (indicators.Count == 0)
@@ -738,6 +962,55 @@ namespace SSMS_EnvTabs
 
             source = "no-vstextview-from-frame";
             return false;
+        }
+
+        private bool TryResolveIndicatorSearchRoots(IVsWindowFrame frame, out List<DependencyObject> roots, out string resolutionSource)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            roots = new List<DependencyObject>();
+            resolutionSource = null;
+
+            if (!TryGetActiveVsTextView(frame, out IVsTextView vsTextView, out string textViewSource))
+            {
+                resolutionSource = textViewSource ?? "no-active-vstextview";
+                return false;
+            }
+
+            if (!TryResolveWpfTextView(vsTextView, out IWpfTextViewHost textViewHost, out IWpfTextView wpfTextView, out string wpfSource))
+            {
+                resolutionSource = $"{textViewSource}; {wpfSource}";
+                return false;
+            }
+
+            if (textViewHost != null)
+            {
+                try
+                {
+                    if (textViewHost.GetTextViewMargin("Indicator") is IWpfTextViewMargin indicatorMargin)
+                    {
+                        TryAddUniqueRoot(indicatorMargin.VisualElement, roots);
+                    }
+                }
+                catch
+                {
+                    // Ignore margin access failures and fall back to text view visuals.
+                }
+            }
+
+            if (roots.Count == 0 && wpfTextView != null)
+            {
+                TryAddUniqueRoot(wpfTextView.VisualElement, roots);
+            }
+
+            if (roots.Count == 0)
+            {
+                resolutionSource = $"{textViewSource}; {wpfSource}; no-indicator-roots";
+                return false;
+            }
+
+            resolutionSource = $"{textViewSource}; {wpfSource}; exact-indicator-margin";
+            return true;
         }
 
         private bool TryGetVsTextViewFromFrameProperty(IVsWindowFrame frame, int propertyId, string propertyLabel, out IVsTextView textView, out string source)
@@ -977,104 +1250,43 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static IEnumerable<DependencyObject> FindScopedLineIndicatorCandidates(DependencyObject root)
+        private static void CollectIndicatorControls(IEnumerable<DependencyObject> roots, List<DependencyObject> indicators)
+        {
+            if (roots == null || indicators == null)
+            {
+                return;
+            }
+
+            var seen = new HashSet<DependencyObject>(indicators);
+            foreach (DependencyObject root in roots)
+            {
+                foreach (DependencyObject found in FindIndicatorControls(root))
+                {
+                    if (found != null && seen.Add(found))
+                    {
+                        indicators.Add(found);
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<DependencyObject> FindIndicatorControls(DependencyObject root)
         {
             var results = new List<DependencyObject>();
-            if (!(root is FrameworkElement rootElement))
+            if (root == null)
             {
                 return results;
             }
 
             foreach (DependencyObject candidate in EnumerateVisualDescendants(root, maxNodes: 4000))
             {
-                if (!(candidate is FrameworkElement element))
-                {
-                    continue;
-                }
-
-                if (element.ActualWidth <= 0 || element.ActualHeight <= 0)
-                {
-                    continue;
-                }
-
-                if (element.ActualWidth > 20 || element.ActualHeight < 10 || element.ActualHeight > 600)
-                {
-                    continue;
-                }
-
-                string typeName = (element.GetType().FullName ?? element.GetType().Name ?? string.Empty).ToLowerInvariant();
-                string name = (element.Name ?? string.Empty).ToLowerInvariant();
-                string probe = typeName + " " + name;
-                if (probe.Contains("button")
-                    || probe.Contains("thumb")
-                    || probe.Contains("separator")
-                    || probe.Contains("image")
-                    || probe.Contains("textblock")
-                    || probe.Contains("scrollbar")
-                    || probe.Contains("status")
-                    || probe.Contains("compartment")
-                    || probe.Contains("overflow"))
-                {
-                    continue;
-                }
-
-                if (!TryGetLocationRelativeToRoot(element, rootElement, out Point relativeLocation))
-                {
-                    continue;
-                }
-
-                double xThreshold = Math.Max(40, Math.Min(80, rootElement.ActualWidth * 0.35));
-                if (relativeLocation.X < -2 || relativeLocation.X > xThreshold)
-                {
-                    continue;
-                }
-
-                if (relativeLocation.Y < -2 || relativeLocation.Y > rootElement.ActualHeight + 2)
-                {
-                    continue;
-                }
-
-                bool looksLikeMarker = element.ActualWidth <= 8
-                    || probe.Contains("indicator")
-                    || probe.Contains("glyph")
-                    || probe.Contains("margin")
-                    || probe.Contains("adornment")
-                    || element is Border
-                    || element is Panel
-                    || element is System.Windows.Shapes.Shape;
-
-                if (!looksLikeMarker)
-                {
-                    continue;
-                }
-
-                if (!results.Contains(candidate))
+                if (IsIndicatorControl(candidate) && !results.Contains(candidate))
                 {
                     results.Add(candidate);
                 }
             }
 
             return results;
-        }
-
-        private static bool TryGetLocationRelativeToRoot(FrameworkElement element, FrameworkElement root, out Point location)
-        {
-            location = new Point(double.NaN, double.NaN);
-            if (element == null || root == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                GeneralTransform transform = element.TransformToAncestor(root);
-                location = transform.Transform(new Point(0, 0));
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         private static bool TryFindObjectGraphInstance<T>(object rootObject, out T match, int maxDepth, int maxNodes) where T : class
@@ -1128,509 +1340,6 @@ namespace SSMS_EnvTabs
             }
 
             return false;
-        }
-
-        private static List<DependencyObject> GetIndicatorSearchRoots(object docView)
-        {
-            var roots = new List<DependencyObject>();
-            if (docView == null)
-            {
-                return roots;
-            }
-
-            TryAddRootCandidate(docView, roots);
-
-            string[] knownMembers = new[]
-            {
-                "TextViewHost", "m_textViewHost", "_textViewHost",
-                "WpfTextViewHost", "m_wpfTextViewHost",
-                "ViewHost", "m_viewHost",
-                "TextView", "m_textView"
-            };
-
-            foreach (string member in knownMembers)
-            {
-                TryAddMemberRoot(docView, member, roots);
-            }
-
-            TryAddLikelyViewMembers(docView, roots);
-            TryAddEnumerableItems(docView, roots);
-            TryAddObjectGraphRoots(docView, roots, maxDepth: 4, maxNodes: 350);
-
-            if (roots.Count > 0)
-            {
-                EnvTabsLog.Info($"LineIndicator: discovered {roots.Count} visual root candidate(s) from DocView graph.");
-            }
-
-            return roots;
-        }
-
-        private static void TryAddLikelyViewMembers(object owner, List<DependencyObject> roots)
-        {
-            if (owner == null)
-            {
-                return;
-            }
-
-            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-
-            try
-            {
-                foreach (FieldInfo field in owner.GetType().GetFields(Flags))
-                {
-                    if (!IsLikelyVisualMemberName(field?.Name))
-                    {
-                        continue;
-                    }
-
-                    TryAddRootCandidate(field.GetValue(owner), roots);
-                }
-
-                foreach (PropertyInfo prop in owner.GetType().GetProperties(Flags))
-                {
-                    if (prop == null || !prop.CanRead || prop.GetIndexParameters().Length != 0)
-                    {
-                        continue;
-                    }
-
-                    if (!IsLikelyVisualMemberName(prop.Name))
-                    {
-                        continue;
-                    }
-
-                    TryAddRootCandidate(prop.GetValue(owner, null), roots);
-                }
-            }
-            catch
-            {
-                // Ignore reflection failures.
-            }
-        }
-
-        private static void TryAddEnumerableItems(object owner, List<DependencyObject> roots)
-        {
-            if (owner is IEnumerable enumerable)
-            {
-                foreach (object item in enumerable)
-                {
-                    TryAddRootCandidate(item, roots);
-                }
-            }
-        }
-
-        private static void TryAddObjectGraphRoots(object rootObject, List<DependencyObject> roots, int maxDepth, int maxNodes)
-        {
-            if (rootObject == null || maxDepth < 0 || maxNodes <= 0)
-            {
-                return;
-            }
-
-            var comparer = ReferenceEqualityComparer.Instance;
-            var visited = new HashSet<object>(comparer);
-            var queue = new Queue<(object Obj, int Depth)>();
-            queue.Enqueue((rootObject, 0));
-            visited.Add(rootObject);
-
-            int processed = 0;
-            while (queue.Count > 0 && processed < maxNodes)
-            {
-                var current = queue.Dequeue();
-                object obj = current.Obj;
-                int depth = current.Depth;
-                processed++;
-
-                TryAddRootCandidate(obj, roots);
-
-                if (depth >= maxDepth || obj == null)
-                {
-                    continue;
-                }
-
-                if (obj is string || obj.GetType().IsPrimitive || obj.GetType().IsEnum)
-                {
-                    continue;
-                }
-
-                foreach (object child in ReflectChildren(obj))
-                {
-                    if (child == null)
-                    {
-                        continue;
-                    }
-
-                    if (!visited.Add(child))
-                    {
-                        continue;
-                    }
-
-                    queue.Enqueue((child, depth + 1));
-                    if (queue.Count + processed >= maxNodes)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-
-        private static IEnumerable<object> ReflectChildren(object obj)
-        {
-            if (obj == null)
-            {
-                yield break;
-            }
-
-            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            Type type = obj.GetType();
-
-            FieldInfo[] fields;
-            try
-            {
-                fields = type.GetFields(Flags);
-            }
-            catch
-            {
-                fields = Array.Empty<FieldInfo>();
-            }
-
-            foreach (FieldInfo field in fields)
-            {
-                object value = null;
-                try
-                {
-                    value = field.GetValue(obj);
-                }
-                catch
-                {
-                    // Ignore inaccessible fields.
-                }
-
-                if (value == null)
-                {
-                    continue;
-                }
-
-                if (value is IEnumerable enumerable && !(value is string))
-                {
-                    foreach (object item in enumerable)
-                    {
-                        if (item != null)
-                        {
-                            yield return item;
-                        }
-                    }
-                }
-
-                yield return value;
-            }
-
-            PropertyInfo[] props;
-            try
-            {
-                props = type.GetProperties(Flags);
-            }
-            catch
-            {
-                props = Array.Empty<PropertyInfo>();
-            }
-
-            foreach (PropertyInfo prop in props)
-            {
-                if (!prop.CanRead || prop.GetIndexParameters().Length != 0)
-                {
-                    continue;
-                }
-
-                object value = null;
-                try
-                {
-                    value = prop.GetValue(obj, null);
-                }
-                catch
-                {
-                    // Ignore getter exceptions.
-                }
-
-                if (value == null)
-                {
-                    continue;
-                }
-
-                if (value is IEnumerable enumerable && !(value is string))
-                {
-                    foreach (object item in enumerable)
-                    {
-                        if (item != null)
-                        {
-                            yield return item;
-                        }
-                    }
-                }
-
-                yield return value;
-            }
-        }
-
-        private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
-        {
-            internal static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
-
-            public new bool Equals(object x, object y)
-            {
-                return ReferenceEquals(x, y);
-            }
-
-            public int GetHashCode(object obj)
-            {
-                return RuntimeHelpers.GetHashCode(obj);
-            }
-        }
-
-        private static bool IsLikelyVisualMemberName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return false;
-            }
-
-            string n = name.ToLowerInvariant();
-            return n.Contains("view") || n.Contains("host") || n.Contains("editor") || n.Contains("text");
-        }
-
-        private static void TryAddMemberRoot(object owner, string memberName, List<DependencyObject> roots)
-        {
-            if (owner == null || string.IsNullOrWhiteSpace(memberName))
-            {
-                return;
-            }
-
-            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-
-            try
-            {
-                PropertyInfo prop = owner.GetType().GetProperty(memberName, Flags);
-                if (prop != null)
-                {
-                    TryAddRootCandidate(prop.GetValue(owner, null), roots);
-                    return;
-                }
-
-                FieldInfo field = owner.GetType().GetField(memberName, Flags);
-                if (field != null)
-                {
-                    TryAddRootCandidate(field.GetValue(owner), roots);
-                }
-            }
-            catch
-            {
-                // Ignore reflection failures.
-            }
-        }
-
-        private static void TryAddRootCandidate(object candidate, List<DependencyObject> roots)
-        {
-            if (candidate == null)
-            {
-                return;
-            }
-
-            if (candidate is DependencyObject direct)
-            {
-                if (!roots.Contains(direct))
-                {
-                    roots.Add(direct);
-                }
-                return;
-            }
-
-            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            try
-            {
-                PropertyInfo visualElement = candidate.GetType().GetProperty("VisualElement", Flags);
-                if (visualElement?.GetValue(candidate, null) is DependencyObject visualRoot && !roots.Contains(visualRoot))
-                {
-                    roots.Add(visualRoot);
-                }
-            }
-            catch
-            {
-                // Ignore reflection failures.
-            }
-        }
-
-        private static List<DependencyObject> FindVisualByTypeNameOrName(DependencyObject root, string targetTypeName, string targetTypeFullName, string targetName)
-        {
-            var results = new List<DependencyObject>();
-            if (root == null || (string.IsNullOrWhiteSpace(targetTypeName) && string.IsNullOrWhiteSpace(targetTypeFullName) && string.IsNullOrWhiteSpace(targetName)))
-            {
-                return results;
-            }
-
-            string typeName = root.GetType().Name;
-            string fullTypeName = root.GetType().FullName;
-
-            bool typeMatch = (!string.IsNullOrWhiteSpace(targetTypeName) && string.Equals(typeName, targetTypeName, StringComparison.OrdinalIgnoreCase))
-                || (!string.IsNullOrWhiteSpace(targetTypeFullName) && string.Equals(fullTypeName, targetTypeFullName, StringComparison.OrdinalIgnoreCase));
-
-            if (typeMatch)
-            {
-                results.Add(root);
-            }
-
-            if (!string.IsNullOrWhiteSpace(targetName)
-                && root is FrameworkElement fe
-                && string.Equals(fe.Name, targetName, StringComparison.OrdinalIgnoreCase))
-            {
-                if (!results.Contains(root))
-                {
-                    results.Add(root);
-                }
-            }
-
-            int childCount;
-            try
-            {
-                childCount = VisualTreeHelper.GetChildrenCount(root);
-            }
-            catch
-            {
-                return results;
-            }
-
-            for (int i = 0; i < childCount; i++)
-            {
-                DependencyObject child = VisualTreeHelper.GetChild(root, i);
-                List<DependencyObject> found = FindVisualByTypeNameOrName(child, targetTypeName, targetTypeFullName, targetName);
-                if (found.Count > 0)
-                {
-                    foreach (DependencyObject item in found)
-                    {
-                        if (!results.Contains(item))
-                        {
-                            results.Add(item);
-                        }
-                    }
-                }
-            }
-
-            return results;
-        }
-
-        private static List<DependencyObject> FindIndicatorsUnderAdornmentLayers(DependencyObject root)
-        {
-            var indicators = new List<DependencyObject>();
-            if (root == null)
-            {
-                return indicators;
-            }
-
-            List<DependencyObject> layers = FindVisualByTypeNameOrName(root, AdornmentLayerTypeName, AdornmentLayerTypeFullName, null);
-            foreach (DependencyObject layer in layers)
-            {
-                List<DependencyObject> foundIndicators = FindVisualByTypeNameOrName(layer, IndicatorTypeName, IndicatorTypeFullName, IndicatorTypeName);
-                foreach (DependencyObject indicator in foundIndicators)
-                {
-                    if (!indicators.Contains(indicator))
-                    {
-                        indicators.Add(indicator);
-                    }
-                }
-            }
-
-            return indicators;
-        }
-
-        private static List<DependencyObject> FindIndicatorsFromApplicationWindows()
-        {
-            var indicators = new List<DependencyObject>();
-
-            Application app = Application.Current;
-            if (app == null)
-            {
-                return indicators;
-            }
-
-            foreach (Window window in app.Windows)
-            {
-                if (window == null || !window.IsVisible)
-                {
-                    continue;
-                }
-
-                foreach (DependencyObject found in FindVisualByTypeNameOrName(window, IndicatorTypeName, IndicatorTypeFullName, IndicatorTypeName))
-                {
-                    if (found != null && !indicators.Contains(found))
-                    {
-                        indicators.Add(found);
-                    }
-                }
-            }
-
-            return indicators;
-        }
-
-        private static List<DependencyObject> FindLikelyEditorMarkerCandidatesFromApplicationWindows()
-        {
-            var candidates = new List<DependencyObject>();
-
-            Application app = Application.Current;
-            if (app == null)
-            {
-                return candidates;
-            }
-
-            foreach (Window window in app.Windows)
-            {
-                if (window == null || !window.IsVisible)
-                {
-                    continue;
-                }
-
-                foreach (DependencyObject node in EnumerateVisualDescendants(window, maxNodes: 12000))
-                {
-                    if (!(node is FrameworkElement fe))
-                    {
-                        continue;
-                    }
-
-                    if (fe.ActualWidth <= 0 || fe.ActualHeight <= 0)
-                    {
-                        continue;
-                    }
-
-                    if (fe.ActualWidth > 30 || fe.ActualHeight < 8 || fe.ActualHeight > 2200)
-                    {
-                        continue;
-                    }
-
-                    string feName = (fe.Name ?? string.Empty).ToLowerInvariant();
-                    if (feName.Contains("accentrect") || feName.Contains("autohidetabselectedindicator"))
-                    {
-                        continue;
-                    }
-
-                    if (HasAncestorToken(fe, "autohide", "toolwindow", "objectexplorer"))
-                    {
-                        continue;
-                    }
-
-                    if (!TryGetElementLocation(fe, out Point location))
-                    {
-                        continue;
-                    }
-
-                    if (location.X > 500 || location.Y < 20)
-                    {
-                        continue;
-                    }
-
-                    if (!candidates.Contains(fe))
-                    {
-                        candidates.Add(fe);
-                    }
-                }
-            }
-
-            return candidates;
         }
 
         private static IEnumerable<DependencyObject> EnumerateVisualDescendants(DependencyObject root, int maxNodes)
@@ -1751,10 +1460,6 @@ namespace SSMS_EnvTabs
                             }
                         }
                     }
-                    else
-                    {
-                        // ignore
-                    }
                 }
             }
             catch (Exception ex)
@@ -1763,6 +1468,249 @@ namespace SSMS_EnvTabs
                 EnvTabsLog.Error($"Error accessing DocView connection info: {ex.Message}");
             }
             return false;
+        }
+
+        private static void TryLogStatusBarOwnerCandidates(object docView, object connection)
+        {
+            if (docView == null)
+            {
+                return;
+            }
+
+            string key = (docView.GetType().FullName ?? docView.GetType().Name)
+                + "#"
+                + RuntimeHelpers.GetHashCode(docView)
+                + "|"
+                + (connection?.GetType().FullName ?? "<null>")
+                + "#"
+                + (connection != null ? RuntimeHelpers.GetHashCode(connection).ToString() : "null");
+
+            lock (statusBarProbeLock)
+            {
+                if (!loggedStatusBarProbeKeys.Add(key))
+                {
+                    return;
+                }
+            }
+
+            EnvTabsLog.Info($"StatusBarProbe: begin docView='{docView.GetType().FullName}' connection='{connection?.GetType().FullName ?? "<null>"}'");
+
+            int emitted = 0;
+            foreach (string candidate in EnumerateStatusBarOwnerCandidates(docView, connection))
+            {
+                EnvTabsLog.Info("StatusBarProbe: " + candidate);
+                emitted++;
+                if (emitted >= 40)
+                {
+                    break;
+                }
+            }
+
+            if (emitted == 0)
+            {
+                EnvTabsLog.Info("StatusBarProbe: no candidate members found near DocView or connection object.");
+            }
+        }
+
+        private static IEnumerable<string> EnumerateStatusBarOwnerCandidates(object docView, object connection)
+        {
+            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            var queue = new Queue<(object Node, string Path, int Depth)>();
+
+            EnqueueProbeNode(docView, "DocView", 0, queue, visited);
+            EnqueueProbeNode(connection, "Connection", 0, queue, visited);
+
+            int visitedCount = 0;
+            while (queue.Count > 0 && visitedCount < 160)
+            {
+                var current = queue.Dequeue();
+                visitedCount++;
+
+                foreach (var member in EnumerateProbeMembers(current.Node))
+                {
+                    if (member.Value == null)
+                    {
+                        continue;
+                    }
+
+                    Type valueType = member.Value.GetType();
+                    string path = current.Path + "." + member.Name;
+                    string probe = ((member.Name ?? string.Empty) + " " + (valueType.FullName ?? valueType.Name ?? string.Empty)).ToLowerInvariant();
+
+                    if (LooksLikeStatusBarOwnerProbe(probe))
+                    {
+                        yield return path + " => type='" + (valueType.FullName ?? valueType.Name) + "' value='" + FormatProbeValue(member.Value) + "'";
+                    }
+
+                    if (current.Depth >= 3 || IsSimpleProbeType(valueType))
+                    {
+                        continue;
+                    }
+
+                    if (visited.Add(member.Value))
+                    {
+                        queue.Enqueue((member.Value, path, current.Depth + 1));
+                    }
+                }
+            }
+        }
+
+        private static void EnqueueProbeNode(object value, string path, int depth, Queue<(object Node, string Path, int Depth)> queue, HashSet<object> visited)
+        {
+            if (value == null || queue == null || visited == null)
+            {
+                return;
+            }
+
+            if (visited.Add(value))
+            {
+                queue.Enqueue((value, path, depth));
+            }
+        }
+
+        private static IEnumerable<(string Name, object Value)> EnumerateProbeMembers(object obj)
+        {
+            if (obj == null)
+            {
+                yield break;
+            }
+
+            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Type type = obj.GetType();
+
+            FieldInfo[] fields;
+            try
+            {
+                fields = type.GetFields(Flags);
+            }
+            catch
+            {
+                fields = Array.Empty<FieldInfo>();
+            }
+
+            foreach (FieldInfo field in fields)
+            {
+                object value = null;
+                try
+                {
+                    value = field.GetValue(obj);
+                }
+                catch
+                {
+                    value = null;
+                }
+
+                if (value != null)
+                {
+                    yield return (field.Name, value);
+                }
+            }
+
+            PropertyInfo[] props;
+            try
+            {
+                props = type.GetProperties(Flags);
+            }
+            catch
+            {
+                props = Array.Empty<PropertyInfo>();
+            }
+
+            foreach (PropertyInfo prop in props)
+            {
+                if (!prop.CanRead || prop.GetIndexParameters().Length != 0)
+                {
+                    continue;
+                }
+
+                object value = null;
+                try
+                {
+                    value = prop.GetValue(obj, null);
+                }
+                catch
+                {
+                    value = null;
+                }
+
+                if (value != null)
+                {
+                    yield return (prop.Name, value);
+                }
+            }
+        }
+
+        private static bool LooksLikeStatusBarOwnerProbe(string probe)
+        {
+            if (string.IsNullOrWhiteSpace(probe))
+            {
+                return false;
+            }
+
+            return probe.Contains("status")
+                || probe.Contains("color")
+                || probe.Contains("pane")
+                || probe.Contains("host")
+                || probe.Contains("hwn")
+                || probe.Contains("viewpresenter")
+                || probe.Contains("generic")
+                || probe.Contains("client")
+                || probe.Contains("strip")
+                || probe.Contains("connection");
+        }
+
+        private static bool IsSimpleProbeType(Type type)
+        {
+            if (type == null)
+            {
+                return true;
+            }
+
+            if (type.IsPrimitive || type.IsEnum)
+            {
+                return true;
+            }
+
+            return type == typeof(string)
+                || type == typeof(decimal)
+                || type == typeof(DateTime)
+                || type == typeof(TimeSpan)
+                || type == typeof(Guid)
+                || type == typeof(IntPtr)
+                || type == typeof(UIntPtr)
+                || type == typeof(System.Drawing.Color)
+                || typeof(Brush).IsAssignableFrom(type);
+        }
+
+        private static string FormatProbeValue(object value)
+        {
+            if (value == null)
+            {
+                return "<null>";
+            }
+
+            if (value is string s)
+            {
+                return s;
+            }
+
+            if (value is System.Drawing.Color drawingColor)
+            {
+                return drawingColor.ToArgb().ToString("X8");
+            }
+
+            if (value is Brush brush)
+            {
+                return brush.ToString();
+            }
+
+            Type type = value.GetType();
+            if (type.IsPrimitive || type.IsEnum || value is decimal || value is Guid || value is DateTime || value is TimeSpan || value is IntPtr || value is UIntPtr)
+            {
+                return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            return type.FullName ?? type.Name;
         }
 
         private static void TryPopulateFromCaptions(IVsWindowFrame frame, ref string server, ref string database)

@@ -91,7 +91,10 @@ namespace SSMS_EnvTabs
         public bool EnableRemoveDotSql { get; set; } = true;
 
         [DataMember(Name = "enableLineIndicatorColor", IsRequired = false, Order = 13)]
-        public bool EnableLineIndicatorColor { get; set; } = false;
+        public bool EnableLineIndicatorColor { get; set; } = true;
+
+        [DataMember(Name = "enableStatusBarColor", IsRequired = false, Order = 14)]
+        public bool EnableStatusBarColor { get; set; } = true;
     }
 
     [DataContract]

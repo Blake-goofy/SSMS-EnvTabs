@@ -42,6 +42,8 @@ namespace SSMS_EnvTabs
         private CheckBox serverAliasPromptToggle;
         private CheckBox updateChecksToggle;
         private CheckBox removeDotSqlToggle;
+        private CheckBox lineIndicatorColorToggle;
+        private CheckBox statusBarColorToggle;
         private TextBox suggestedGroupNameStyleTextBox;
         private TextBox newQueryRenameStyleTextBox;
         private TextBox savedFileRenameStyleTextBox;
@@ -154,6 +156,8 @@ namespace SSMS_EnvTabs
         private const bool DefaultEnableServerAliasPrompt = true;
         private const bool DefaultEnableUpdateChecks = true;
         private const bool DefaultEnableRemoveDotSql = true;
+        private const bool DefaultEnableLineIndicatorColor = true;
+        private const bool DefaultEnableStatusBarColor = true;
         private const string DefaultSuggestedGroupNameStyle = "[serverAlias] [db]";
         private const string DefaultNewQueryRenameStyle = "[#]. [groupName]";
         private const string DefaultSavedFileRenameStyle = "[filename]";
@@ -210,6 +214,8 @@ namespace SSMS_EnvTabs
             serverAliasPromptToggle = FindRequiredControl<CheckBox>("ServerAliasPromptToggle");
             updateChecksToggle = FindRequiredControl<CheckBox>("UpdateChecksToggle");
             removeDotSqlToggle = FindRequiredControl<CheckBox>("RemoveDotSqlToggle");
+            lineIndicatorColorToggle = FindRequiredControl<CheckBox>("LineIndicatorColorToggle");
+            statusBarColorToggle = FindRequiredControl<CheckBox>("StatusBarColorToggle");
             suggestedGroupNameStyleTextBox = FindRequiredControl<TextBox>("SuggestedGroupNameStyleTextBox");
             newQueryRenameStyleTextBox = FindRequiredControl<TextBox>("NewQueryRenameStyleTextBox");
             savedFileRenameStyleTextBox = FindRequiredControl<TextBox>("SavedFileRenameStyleTextBox");
@@ -255,6 +261,8 @@ namespace SSMS_EnvTabs
             WireToggle(serverAliasPromptToggle);
             WireToggle(updateChecksToggle);
             WireToggle(removeDotSqlToggle);
+            WireToggle(lineIndicatorColorToggle);
+            WireToggle(statusBarColorToggle);
             PreviewKeyDown += SettingsToolWindowControl_PreviewKeyDown;
             UpdateStyleEditUi();
         }
@@ -450,8 +458,12 @@ namespace SSMS_EnvTabs
             Color neutralBaseColor = isLightTheme
                 ? BlendColors(bgColor, Colors.Black, 0.06)
                 : BlendColors(bgColor, Colors.White, 0.10);
-            Color neutralHoverColor = BlendColors(neutralBaseColor, Colors.Black, 0.06);
-            Color neutralPressedColor = BlendColors(neutralBaseColor, Colors.Black, 0.12);
+            Color neutralHoverColor = isLightTheme
+                ? BlendColors(neutralBaseColor, Colors.Black, 0.06)
+                : BlendColors(neutralBaseColor, Colors.White, 0.18);
+            Color neutralPressedColor = isLightTheme
+                ? BlendColors(neutralBaseColor, Colors.Black, 0.12)
+                : BlendColors(neutralBaseColor, Colors.White, 0.28);
 
             Color accentColor = GetBrushColor(toggleOn, GetBrushColor(border, fgColor));
             Color primaryHoverColor = BlendColors(accentColor, Colors.Black, 0.08);
@@ -570,6 +582,8 @@ namespace SSMS_EnvTabs
                 serverAliasPromptToggle.IsChecked = settings.EnableServerAliasPrompt;
                 updateChecksToggle.IsChecked = settings.EnableUpdateChecks;
                 removeDotSqlToggle.IsChecked = settings.EnableRemoveDotSql;
+                lineIndicatorColorToggle.IsChecked = settings.EnableLineIndicatorColor;
+                statusBarColorToggle.IsChecked = settings.EnableStatusBarColor;
                 suggestedGroupNameStyleTextBox.Text = NormalizeStyleValue(settings.SuggestedGroupNameStyle, DefaultSuggestedGroupNameStyle);
                 newQueryRenameStyleTextBox.Text = NormalizeStyleValue(settings.NewQueryRenameStyle, DefaultNewQueryRenameStyle);
                 savedFileRenameStyleTextBox.Text = NormalizeStyleValue(settings.SavedFileRenameStyle, DefaultSavedFileRenameStyle);
@@ -635,6 +649,8 @@ namespace SSMS_EnvTabs
                 config.Settings.EnableServerAliasPrompt = serverAliasPromptToggle.IsChecked == true;
                 config.Settings.EnableUpdateChecks = updateChecksToggle.IsChecked == true;
                 config.Settings.EnableRemoveDotSql = removeDotSqlToggle.IsChecked == true;
+                config.Settings.EnableLineIndicatorColor = lineIndicatorColorToggle.IsChecked == true;
+                config.Settings.EnableStatusBarColor = statusBarColorToggle.IsChecked == true;
 
                 string selectedAutoConfigure = autoConfigureCombo.SelectedValue as string;
                 config.Settings.AutoConfigure = NormalizeAutoConfigure(selectedAutoConfigure);
@@ -802,6 +818,8 @@ namespace SSMS_EnvTabs
                     serverAliasPromptToggle.IsChecked = DefaultEnableServerAliasPrompt;
                     updateChecksToggle.IsChecked = DefaultEnableUpdateChecks;
                     removeDotSqlToggle.IsChecked = DefaultEnableRemoveDotSql;
+                    lineIndicatorColorToggle.IsChecked = DefaultEnableLineIndicatorColor;
+                    statusBarColorToggle.IsChecked = DefaultEnableStatusBarColor;
                     autoConfigureCombo.SelectedValue = DefaultAutoConfigureValue;
                 }
             }
@@ -1758,6 +1776,9 @@ namespace SSMS_EnvTabs
                 }
                 else
                 {
+                    Grid summaryRowGrid = new Grid();
+                    summaryRowGrid.MinHeight = 32;
+
                     Grid summaryGrid = new Grid();
                     summaryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     summaryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1780,9 +1801,23 @@ namespace SSMS_EnvTabs
                     Grid.SetColumn(aliasValueText, 1);
                     summaryGrid.Children.Add(aliasValueText);
 
-                    fieldsPanel.Children.Add(summaryGrid);
+                    summaryRowGrid.Children.Add(summaryGrid);
 
-                    StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
+                    StackPanel actionPanel = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(10, 0, 0, 0)
+                    };
+                    if (hasActiveEdit)
+                    {
+                        actionPanel.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        actionPanel.Style = TryFindResource("HoverRevealReservedSpaceActionPanelStyle") as Style;
+                    }
 
                     Button editButton = new Button { Content = "Edit", Style = ResolveButtonStyle("CompactCardButtonStyle") };
                     editButton.IsEnabled = !hasActiveEdit;
@@ -1794,10 +1829,12 @@ namespace SSMS_EnvTabs
                     deleteButton.Click += (s, e) => DeleteServerAliasRow(row);
                     actionPanel.Children.Add(deleteButton);
 
+                    summaryRowGrid.Children.Add(actionPanel);
+                    fieldsPanel.Children.Add(summaryRowGrid);
+
                     Grid.SetColumn(fieldsPanel, 0);
-                    Grid.SetColumn(actionPanel, 1);
+                    Grid.SetColumnSpan(fieldsPanel, 2);
                     grid.Children.Add(fieldsPanel);
-                    grid.Children.Add(actionPanel);
                 }
 
                 cardBorder.Child = grid;
@@ -2081,6 +2118,14 @@ namespace SSMS_EnvTabs
                     });
 
                     StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
+                    if (hasActiveEdit)
+                    {
+                        actionPanel.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        actionPanel.Style = TryFindResource("HoverRevealActionPanelStyle") as Style;
+                    }
 
                     Button editButton = new Button { Content = "Edit", Style = ResolveButtonStyle("CompactCardButtonStyle") };
                     editButton.IsEnabled = !hasActiveEdit;
