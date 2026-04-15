@@ -559,32 +559,6 @@
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
 
-                        <Grid Style="{StaticResource OptionRowGridStyle}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
-                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Color line indicator" />
-                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Initial value for new connection groups. Each group can override this in its own settings." />
-                            </StackPanel>
-                            <CheckBox Grid.Column="1" x:Name="LineIndicatorColorToggle" Style="{StaticResource SwitchToggleStyle}" />
-                        </Grid>
-                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
-
-                        <Grid Style="{StaticResource OptionRowGridStyle}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
-                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Color status bar" />
-                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Initial value for new connection groups. Each group can override this in its own settings." />
-                            </StackPanel>
-                            <CheckBox Grid.Column="1" x:Name="StatusBarColorToggle" Style="{StaticResource SwitchToggleStyle}" />
-                        </Grid>
-                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
-
                         <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Prompts" />
 
                         <Grid Style="{StaticResource OptionRowGridStyle}">
@@ -610,6 +584,32 @@
                                 <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs suggests adding a friendly alias when a server has no alias configured." />
                             </StackPanel>
                             <CheckBox Grid.Column="1" x:Name="ServerAliasPromptToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Color line indicator" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Initial value for new connection groups. Each group can override this in its own settings." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="LineIndicatorColorToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Color status bar" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Initial value for new connection groups. Each group can override this in its own settings." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="StatusBarColorToggle" Style="{StaticResource SwitchToggleStyle}" />
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
 
