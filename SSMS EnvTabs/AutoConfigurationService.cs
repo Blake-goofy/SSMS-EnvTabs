@@ -28,6 +28,8 @@ namespace SSMS_EnvTabs
             public bool UseDb { get; set; }
             public string GroupName { get; set; }
             public int? ColorIndex { get; set; }
+            public bool? EnableLineIndicatorColor { get; set; }
+            public bool? EnableStatusBarColor { get; set; }
         }
 
         public static void ClearSuppressed()
@@ -153,7 +155,9 @@ namespace SSMS_EnvTabs
                     HideDatabaseRow = !useDb,
                     HideAliasStep = !enableAutoRename || !enableAliasPrompt,
                     HideGroupNameRow = !enableAutoRename,
-                    UsedColorIndexes = usedColorIndexes
+                    UsedColorIndexes = usedColorIndexes,
+                    InitialLineIndicatorColor = config.Settings?.InitialLineIndicatorColor ?? true,
+                    InitialStatusBarColor = config.Settings?.InitialStatusBarColor ?? true
                 };
 
                 using (var dlg = new NewRuleDialog(dialogOptions))
@@ -197,7 +201,9 @@ namespace SSMS_EnvTabs
                             Database = database,
                             UseDb = useDb,
                             GroupName = updatedName,
-                            ColorIndex = updatedColor
+                            ColorIndex = updatedColor,
+                            EnableLineIndicatorColor = dlg.EnableLineIndicatorColor,
+                            EnableStatusBarColor = dlg.EnableStatusBarColor
                         };
                         newRule = AddRuleAndSave(context);
                         changesApplied = true;
@@ -290,7 +296,9 @@ namespace SSMS_EnvTabs
                 Server = ctx.Server,
                 Database = ctx.UseDb ? (ctx.Database ?? "%") : "%",
                 Priority = 10,
-                ColorIndex = ctx.ColorIndex
+                ColorIndex = ctx.ColorIndex,
+                EnableLineIndicatorColor = ctx.EnableLineIndicatorColor,
+                EnableStatusBarColor = ctx.EnableStatusBarColor
             };
 
             config.ConnectionGroups.Add(newRule);

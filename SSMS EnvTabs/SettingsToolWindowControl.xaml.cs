@@ -89,6 +89,8 @@ namespace SSMS_EnvTabs
         private TextBox activeConnectionDatabaseTextBox;
         private TextBox activeConnectionPriorityTextBox;
         private ComboBox activeConnectionColorCombo;
+        private CheckBox activeConnectionLineIndicatorCheckBox;
+        private CheckBox activeConnectionStatusBarCheckBox;
 
         private enum EditableStyleField
         {
@@ -123,6 +125,8 @@ namespace SSMS_EnvTabs
             public string Database { get; set; }
             public int Priority { get; set; }
             public int? ColorIndex { get; set; }
+            public bool? EnableLineIndicatorColor { get; set; }
+            public bool? EnableStatusBarColor { get; set; }
             public bool IsEditing { get; set; }
             public bool IsNew { get; set; }
             public string SnapshotGroupName { get; set; }
@@ -130,6 +134,8 @@ namespace SSMS_EnvTabs
             public string SnapshotDatabase { get; set; }
             public int SnapshotPriority { get; set; }
             public int? SnapshotColorIndex { get; set; }
+            public bool? SnapshotEnableLineIndicatorColor { get; set; }
+            public bool? SnapshotEnableStatusBarColor { get; set; }
         }
 
         private sealed class InlineColorChoice
@@ -156,8 +162,8 @@ namespace SSMS_EnvTabs
         private const bool DefaultEnableServerAliasPrompt = true;
         private const bool DefaultEnableUpdateChecks = true;
         private const bool DefaultEnableRemoveDotSql = true;
-        private const bool DefaultEnableLineIndicatorColor = true;
-        private const bool DefaultEnableStatusBarColor = true;
+        private const bool DefaultInitialLineIndicatorColor = true;
+        private const bool DefaultInitialStatusBarColor = true;
         private const string DefaultSuggestedGroupNameStyle = "[serverAlias] [db]";
         private const string DefaultNewQueryRenameStyle = "[#]. [groupName]";
         private const string DefaultSavedFileRenameStyle = "[filename]";
@@ -578,8 +584,8 @@ namespace SSMS_EnvTabs
                 serverAliasPromptToggle.IsChecked = settings.EnableServerAliasPrompt;
                 updateChecksToggle.IsChecked = settings.EnableUpdateChecks;
                 removeDotSqlToggle.IsChecked = settings.EnableRemoveDotSql;
-                lineIndicatorColorToggle.IsChecked = settings.EnableLineIndicatorColor;
-                statusBarColorToggle.IsChecked = settings.EnableStatusBarColor;
+                lineIndicatorColorToggle.IsChecked = settings.InitialLineIndicatorColor;
+                statusBarColorToggle.IsChecked = settings.InitialStatusBarColor;
                 suggestedGroupNameStyleTextBox.Text = NormalizeStyleValue(settings.SuggestedGroupNameStyle, DefaultSuggestedGroupNameStyle);
                 newQueryRenameStyleTextBox.Text = NormalizeStyleValue(settings.NewQueryRenameStyle, DefaultNewQueryRenameStyle);
                 savedFileRenameStyleTextBox.Text = NormalizeStyleValue(settings.SavedFileRenameStyle, DefaultSavedFileRenameStyle);
@@ -645,8 +651,8 @@ namespace SSMS_EnvTabs
                 config.Settings.EnableServerAliasPrompt = serverAliasPromptToggle.IsChecked == true;
                 config.Settings.EnableUpdateChecks = updateChecksToggle.IsChecked == true;
                 config.Settings.EnableRemoveDotSql = removeDotSqlToggle.IsChecked == true;
-                config.Settings.EnableLineIndicatorColor = lineIndicatorColorToggle.IsChecked == true;
-                config.Settings.EnableStatusBarColor = statusBarColorToggle.IsChecked == true;
+                config.Settings.InitialLineIndicatorColor = lineIndicatorColorToggle.IsChecked == true;
+                config.Settings.InitialStatusBarColor = statusBarColorToggle.IsChecked == true;
 
                 string selectedAutoConfigure = autoConfigureCombo.SelectedValue as string;
                 config.Settings.AutoConfigure = NormalizeAutoConfigure(selectedAutoConfigure);
@@ -814,8 +820,8 @@ namespace SSMS_EnvTabs
                     serverAliasPromptToggle.IsChecked = DefaultEnableServerAliasPrompt;
                     updateChecksToggle.IsChecked = DefaultEnableUpdateChecks;
                     removeDotSqlToggle.IsChecked = DefaultEnableRemoveDotSql;
-                    lineIndicatorColorToggle.IsChecked = DefaultEnableLineIndicatorColor;
-                    statusBarColorToggle.IsChecked = DefaultEnableStatusBarColor;
+                    lineIndicatorColorToggle.IsChecked = DefaultInitialLineIndicatorColor;
+                    statusBarColorToggle.IsChecked = DefaultInitialStatusBarColor;
                     autoConfigureCombo.SelectedValue = DefaultAutoConfigureValue;
                 }
             }
@@ -1492,7 +1498,9 @@ namespace SSMS_EnvTabs
                     Server = rule?.Server,
                     Database = rule?.Database,
                     Priority = rule?.Priority ?? 0,
-                    ColorIndex = rule?.ColorIndex
+                    ColorIndex = rule?.ColorIndex,
+                    EnableLineIndicatorColor = rule?.EnableLineIndicatorColor,
+                    EnableStatusBarColor = rule?.EnableStatusBarColor
                 })
                 .ToList();
 
@@ -1550,6 +1558,8 @@ namespace SSMS_EnvTabs
                     card.Database = card.SnapshotDatabase;
                     card.Priority = card.SnapshotPriority;
                     card.ColorIndex = card.SnapshotColorIndex;
+                    card.EnableLineIndicatorColor = card.SnapshotEnableLineIndicatorColor;
+                    card.EnableStatusBarColor = card.SnapshotEnableStatusBarColor;
                     card.IsEditing = false;
                     card.SnapshotGroupName = null;
                     card.SnapshotServer = null;
@@ -1664,7 +1674,9 @@ namespace SSMS_EnvTabs
                 Server = string.Empty,
                 Database = string.Empty,
                 Priority = 0,
-                ColorIndex = null
+                ColorIndex = null,
+                EnableLineIndicatorColor = null,
+                EnableStatusBarColor = null
             };
 
             connectionGroupCards.Insert(0, card);
@@ -1943,6 +1955,8 @@ namespace SSMS_EnvTabs
             activeConnectionDatabaseTextBox = null;
             activeConnectionPriorityTextBox = null;
             activeConnectionColorCombo = null;
+            activeConnectionLineIndicatorCheckBox = null;
+            activeConnectionStatusBarCheckBox = null;
             connectionGroupCardsPanel.Children.Clear();
             bool hasActiveEdit = HasActiveConnectionTabEdit();
             bool showDatabaseField = ShouldShowDatabaseInCards();
@@ -2064,6 +2078,26 @@ namespace SSMS_EnvTabs
 
                     fieldsPanel.Children.Add(rowGrid);
 
+                    StackPanel checkboxPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+                    CheckBox lineIndicatorCheckBox = new CheckBox
+                    {
+                        Content = "Color line indicator",
+                        IsChecked = card.EnableLineIndicatorColor ?? true,
+                        Margin = new Thickness(0, 0, 16, 0),
+                        VerticalContentAlignment = VerticalAlignment.Center
+                    };
+                    lineIndicatorCheckBox.SetResourceReference(Control.ForegroundProperty, "EnvTabsForegroundBrush");
+                    checkboxPanel.Children.Add(lineIndicatorCheckBox);
+                    CheckBox statusBarCheckBox = new CheckBox
+                    {
+                        Content = "Color status bar",
+                        IsChecked = card.EnableStatusBarColor ?? true,
+                        VerticalContentAlignment = VerticalAlignment.Center
+                    };
+                    statusBarCheckBox.SetResourceReference(Control.ForegroundProperty, "EnvTabsForegroundBrush");
+                    checkboxPanel.Children.Add(statusBarCheckBox);
+                    fieldsPanel.Children.Add(checkboxPanel);
+
                     StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
 
                     Button saveButton = new Button { Content = "Save", Style = ResolveButtonStyle("PrimaryCompactCardButtonStyle") };
@@ -2085,6 +2119,8 @@ namespace SSMS_EnvTabs
                     activeConnectionDatabaseTextBox = databaseTextBox;
                     activeConnectionPriorityTextBox = priorityTextBox;
                     activeConnectionColorCombo = colorCombo;
+                    activeConnectionLineIndicatorCheckBox = lineIndicatorCheckBox;
+                    activeConnectionStatusBarCheckBox = statusBarCheckBox;
                 }
                 else
                 {
@@ -2162,6 +2198,8 @@ namespace SSMS_EnvTabs
             card.SnapshotDatabase = card.Database;
             card.SnapshotPriority = card.Priority;
             card.SnapshotColorIndex = card.ColorIndex;
+            card.SnapshotEnableLineIndicatorColor = card.EnableLineIndicatorColor;
+            card.SnapshotEnableStatusBarColor = card.EnableStatusBarColor;
             RebuildConnectionGroupCardsUi();
             RebuildServerAliasRowsUi();
             statusText.Text = "Editing group. Click Save or Cancel.";
@@ -2225,6 +2263,8 @@ namespace SSMS_EnvTabs
             card.Database = string.IsNullOrWhiteSpace(trimmedDatabase) ? null : trimmedDatabase;
             card.Priority = parsedPriority;
             card.ColorIndex = selectedColorIndex;
+            card.EnableLineIndicatorColor = activeConnectionLineIndicatorCheckBox?.IsChecked;
+            card.EnableStatusBarColor = activeConnectionStatusBarCheckBox?.IsChecked;
             card.IsEditing = false;
             card.IsNew = false;
             card.SnapshotGroupName = null;
@@ -2251,6 +2291,8 @@ namespace SSMS_EnvTabs
                 card.Database = card.SnapshotDatabase;
                 card.Priority = card.SnapshotPriority;
                 card.ColorIndex = card.SnapshotColorIndex;
+                card.EnableLineIndicatorColor = card.SnapshotEnableLineIndicatorColor;
+                card.EnableStatusBarColor = card.SnapshotEnableStatusBarColor;
                 card.IsEditing = false;
                 card.SnapshotGroupName = null;
                 card.SnapshotServer = null;
@@ -2492,7 +2534,9 @@ namespace SSMS_EnvTabs
                         Server = card.Server,
                         Database = card.Database,
                         Priority = card.Priority,
-                        ColorIndex = card.ColorIndex
+                        ColorIndex = card.ColorIndex,
+                        EnableLineIndicatorColor = card.EnableLineIndicatorColor,
+                        EnableStatusBarColor = card.EnableStatusBarColor
                     })
                     .ToList();
 
@@ -2535,7 +2579,9 @@ namespace SSMS_EnvTabs
                     Server = rule?.Server,
                     Database = rule?.Database,
                     Priority = rule?.Priority ?? 0,
-                    ColorIndex = rule?.ColorIndex
+                    ColorIndex = rule?.ColorIndex,
+                    EnableLineIndicatorColor = rule?.EnableLineIndicatorColor,
+                    EnableStatusBarColor = rule?.EnableStatusBarColor
                 })
                 .ToList();
 

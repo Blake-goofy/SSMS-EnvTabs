@@ -90,11 +90,11 @@ namespace SSMS_EnvTabs
         [DataMember(Name = "enableRemoveDotSql", IsRequired = false, Order = 12)]
         public bool EnableRemoveDotSql { get; set; } = true;
 
-        [DataMember(Name = "enableLineIndicatorColor", IsRequired = false, Order = 13)]
-        public bool EnableLineIndicatorColor { get; set; } = true;
+        [DataMember(Name = "initialLineIndicatorColor", IsRequired = false, Order = 13)]
+        public bool InitialLineIndicatorColor { get; set; } = true;
 
-        [DataMember(Name = "enableStatusBarColor", IsRequired = false, Order = 14)]
-        public bool EnableStatusBarColor { get; set; } = true;
+        [DataMember(Name = "initialStatusBarColor", IsRequired = false, Order = 14)]
+        public bool InitialStatusBarColor { get; set; } = true;
     }
 
     [DataContract]
@@ -114,5 +114,11 @@ namespace SSMS_EnvTabs
 
         [DataMember(Name = "colorIndex", IsRequired = false, Order = 4, EmitDefaultValue = true)]
         public int? ColorIndex { get; set; }
+
+        [DataMember(Name = "enableLineIndicatorColor", IsRequired = false, Order = 5)]
+        public bool? EnableLineIndicatorColor { get; set; }
+
+        [DataMember(Name = "enableStatusBarColor", IsRequired = false, Order = 6)]
+        public bool? EnableStatusBarColor { get; set; }
     }
 }

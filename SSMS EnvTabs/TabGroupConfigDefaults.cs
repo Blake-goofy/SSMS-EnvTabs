@@ -86,8 +86,8 @@ namespace SSMS_EnvTabs
                     NewQueryRenameStyle = "[#]. [groupName]",
                     SavedFileRenameStyle = "[filename]",
                     EnableRemoveDotSql = true,
-                    EnableLineIndicatorColor = true,
-                    EnableStatusBarColor = true
+                    InitialLineIndicatorColor = true,
+                    InitialStatusBarColor = true
                 }
             };
         }
@@ -115,8 +115,8 @@ namespace SSMS_EnvTabs
                 SuggestedGroupNameStyle = settings.SuggestedGroupNameStyle,
                 SavedFileRenameStyle = settings.SavedFileRenameStyle,
                 EnableRemoveDotSql = settings.EnableRemoveDotSql,
-                EnableLineIndicatorColor = settings.EnableLineIndicatorColor,
-                EnableStatusBarColor = settings.EnableStatusBarColor
+                InitialLineIndicatorColor = settings.InitialLineIndicatorColor,
+                InitialStatusBarColor = settings.InitialStatusBarColor
             };
         }
 

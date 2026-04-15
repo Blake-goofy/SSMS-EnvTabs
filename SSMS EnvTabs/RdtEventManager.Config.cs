@@ -478,7 +478,9 @@ namespace SSMS_EnvTabs
                 HideAliasStep = true,
                 HideGroupNameRow = !enableAutoRename,
                 IsEditMode = true,
-                UsedColorIndexes = usedColorIndexes
+                UsedColorIndexes = usedColorIndexes,
+                InitialLineIndicatorColor = matchedRule.EnableLineIndicatorColor ?? config.Settings?.InitialLineIndicatorColor ?? true,
+                InitialStatusBarColor = matchedRule.EnableStatusBarColor ?? config.Settings?.InitialStatusBarColor ?? true
             };
 
             using (var dlg = new NewRuleDialog(dialogOptions))
@@ -504,6 +506,18 @@ namespace SSMS_EnvTabs
                     if (updatedColor != matchedRule.ColorIndex)
                     {
                         matchedRule.ColorIndex = updatedColor;
+                        configChanged = true;
+                    }
+
+                    if (dlg.EnableLineIndicatorColor != matchedRule.EnableLineIndicatorColor)
+                    {
+                        matchedRule.EnableLineIndicatorColor = dlg.EnableLineIndicatorColor;
+                        configChanged = true;
+                    }
+
+                    if (dlg.EnableStatusBarColor != matchedRule.EnableStatusBarColor)
+                    {
+                        matchedRule.EnableStatusBarColor = dlg.EnableStatusBarColor;
                         configChanged = true;
                     }
 

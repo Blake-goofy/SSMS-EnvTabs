@@ -41,6 +41,9 @@ namespace SSMS_EnvTabs
         private static readonly object statusBarProbeLock = new object();
         private static readonly HashSet<string> loggedStatusBarProbeKeys = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> loggedStatusStripInventoryKeys = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly string[] IndicatorBrushPropertyNames = new[] { "Background", "BorderBrush", "Foreground", "Fill", "Stroke" };
+        private static readonly ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripSnapshot> originalStatusStripState = new ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripSnapshot>();
+        private static readonly ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot> originalIndicatorBrushState = new ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot>();
 
         private IComponentModel componentModel;
         private IVsEditorAdaptersFactoryService editorAdaptersFactoryService;
@@ -54,11 +57,11 @@ namespace SSMS_EnvTabs
                 return true;
             }
 
-            EnvTabsLog.Info($"LineIndicator: attempt cookie={docCookie} moniker='{moniker}' enabled={settings?.EnableLineIndicatorColor == true}");
+            EnvTabsLog.Info($"LineIndicator: attempt cookie={docCookie} moniker='{moniker}' enabled={settings?.InitialLineIndicatorColor == true}");
 
-            if (settings?.EnableLineIndicatorColor != true || settings.EnableAutoColor != true)
+            if (settings?.EnableAutoColor != true)
             {
-                // Feature disabled: do not modify any indicator visuals.
+                // Auto-color globally disabled: do not modify any indicator visuals.
                 return true;
             }
 
@@ -70,11 +73,21 @@ namespace SSMS_EnvTabs
 
             var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
             var matchedRule = TabRuleMatcher.MatchRule(rules, server, database);
+
+            // Per-rule setting overrides global; null means use global default.
+            bool lineIndicatorEnabled = matchedRule?.EnableLineIndicatorColor ?? settings.InitialLineIndicatorColor;
+            if (!lineIndicatorEnabled)
+            {
+                EnvTabsLog.Info($"LineIndicator: disabled for rule cookie={docCookie} server='{server}' db='{database}'");
+                TryRestoreLineIndicatorColor(frame);
+                return true;
+            }
+
             int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
             if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length)
             {
                 EnvTabsLog.Info($"LineIndicator: skipped (no valid color index) cookie={docCookie} server='{server}' db='{database}'");
-                TryClearLineIndicatorColor(frame);
+                TryRestoreLineIndicatorColor(frame);
                 return true;
             }
 
@@ -103,7 +116,7 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            if (frame == null || settings?.EnableStatusBarColor != true || settings.EnableAutoColor != true)
+            if (frame == null || settings?.EnableAutoColor != true)
             {
                 return;
             }
@@ -115,6 +128,16 @@ namespace SSMS_EnvTabs
 
             var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
             var matchedRule = TabRuleMatcher.MatchRule(rules, server, database);
+
+            // Per-rule setting overrides global; null means use global default.
+            bool statusBarEnabled = matchedRule?.EnableStatusBarColor ?? settings.InitialStatusBarColor;
+            if (!statusBarEnabled)
+            {
+                // Restore default status bar appearance if we previously colored it.
+                TryResetDocViewStatusBarColor(frame);
+                return;
+            }
+
             int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
             if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length)
             {
@@ -157,6 +180,87 @@ namespace SSMS_EnvTabs
             return false;
         }
 
+        private void TryResetDocViewStatusBarColor(IVsWindowFrame frame)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (frame == null)
+            {
+                return;
+            }
+
+            if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView) != VSConstants.S_OK || docView == null)
+            {
+                return;
+            }
+
+            if ((TryGetReflectionMemberValue(docView, "statusBar", out object statusBarObject)
+                    || TryGetReflectionMemberValue(docView, "StatusBar", out statusBarObject))
+                && statusBarObject is System.Windows.Forms.StatusStrip statusStrip)
+            {
+                TryResetWinFormsStatusStrip(statusStrip);
+            }
+        }
+
+        private static void TryResetWinFormsStatusStrip(System.Windows.Forms.StatusStrip statusStrip)
+        {
+            if (statusStrip == null || statusStrip.IsDisposed)
+            {
+                return;
+            }
+
+            if (!originalStatusStripState.TryGetValue(statusStrip, out StatusStripSnapshot snapshot))
+            {
+                // No snapshot means we never painted this strip — nothing to restore.
+                return;
+            }
+
+            statusStrip.SuspendLayout();
+            try
+            {
+                RestoreStatusStripRenderer(statusStrip, snapshot);
+                statusStrip.BackColor = snapshot.BackColor;
+                statusStrip.ForeColor = snapshot.ForeColor;
+
+                foreach (StatusStripItemSnapshot itemSnapshot in snapshot.ItemSnapshots)
+                {
+                    if (itemSnapshot.Item == null || itemSnapshot.Item.IsDisposed)
+                    {
+                        continue;
+                    }
+
+                    itemSnapshot.Item.BackColor = itemSnapshot.BackColor;
+                    itemSnapshot.Item.ForeColor = itemSnapshot.ForeColor;
+                }
+            }
+            finally
+            {
+                statusStrip.ResumeLayout(true);
+            }
+
+            // Remove snapshot so a future paint will re-capture the (now restored) state.
+            originalStatusStripState.Remove(statusStrip);
+
+            statusStrip.Invalidate(true);
+            statusStrip.Refresh();
+        }
+
+        private static void RestoreStatusStripRenderer(System.Windows.Forms.StatusStrip statusStrip, StatusStripSnapshot snapshot)
+        {
+            if (snapshot.RenderMode == System.Windows.Forms.ToolStripRenderMode.Custom)
+            {
+                if (snapshot.Renderer != null)
+                {
+                    statusStrip.Renderer = snapshot.Renderer;
+                }
+
+                return;
+            }
+
+            statusStrip.Renderer = null;
+            statusStrip.RenderMode = snapshot.RenderMode;
+        }
+
         private static bool TryApplyWinFormsStatusStripColor(System.Windows.Forms.StatusStrip statusStrip, int colorIndex, out string textColorName)
         {
             textColorName = null;
@@ -171,6 +275,12 @@ namespace SSMS_EnvTabs
             textColorName = IsNearBlack(foreColor) ? "black" : "white";
 
             LogStatusStripItemsOnce(statusStrip);
+
+            // Snapshot original state before first paint so we can restore later.
+            if (!originalStatusStripState.TryGetValue(statusStrip, out _))
+            {
+                originalStatusStripState.GetOrCreateValue(statusStrip).CaptureFrom(statusStrip);
+            }
 
             statusStrip.SuspendLayout();
             try
@@ -427,6 +537,125 @@ namespace SSMS_EnvTabs
             }
         }
 
+        private sealed class StatusStripSnapshot
+        {
+            public System.Windows.Forms.ToolStripRenderMode RenderMode { get; set; }
+            public System.Windows.Forms.ToolStripRenderer Renderer { get; set; }
+            public System.Drawing.Color BackColor { get; set; }
+            public System.Drawing.Color ForeColor { get; set; }
+            public List<StatusStripItemSnapshot> ItemSnapshots { get; } = new List<StatusStripItemSnapshot>();
+
+            public void CaptureFrom(System.Windows.Forms.StatusStrip strip)
+            {
+                RenderMode = strip.RenderMode;
+                Renderer = strip.Renderer;
+                BackColor = strip.BackColor;
+                ForeColor = strip.ForeColor;
+                ItemSnapshots.Clear();
+
+                foreach (System.Windows.Forms.ToolStripItem item in strip.Items)
+                {
+                    ItemSnapshots.Add(StatusStripItemSnapshot.FromItem(item));
+
+                    if (item is System.Windows.Forms.ToolStripDropDownItem dropDownItem)
+                    {
+                        foreach (System.Windows.Forms.ToolStripItem subItem in dropDownItem.DropDownItems)
+                        {
+                            ItemSnapshots.Add(StatusStripItemSnapshot.FromItem(subItem));
+                        }
+                    }
+                }
+            }
+        }
+
+        private sealed class IndicatorBrushSnapshot
+        {
+            private readonly List<IndicatorBrushPropertySnapshot> properties = new List<IndicatorBrushPropertySnapshot>();
+
+            public void CaptureFrom(DependencyObject target)
+            {
+                properties.Clear();
+
+                foreach (string propertyName in IndicatorBrushPropertyNames)
+                {
+                    DependencyProperty dependencyProperty = FindDependencyProperty(target.GetType(), propertyName);
+                    if (dependencyProperty != null)
+                    {
+                        properties.Add(new IndicatorBrushPropertySnapshot
+                        {
+                            DependencyProperty = dependencyProperty,
+                            OriginalLocalValue = target.ReadLocalValue(dependencyProperty)
+                        });
+                    }
+                }
+            }
+
+            public void RestoreTo(DependencyObject target)
+            {
+                foreach (IndicatorBrushPropertySnapshot property in properties)
+                {
+                    if (property.DependencyProperty == null)
+                    {
+                        continue;
+                    }
+
+                    if (property.OriginalLocalValue == DependencyProperty.UnsetValue)
+                    {
+                        target.ClearValue(property.DependencyProperty);
+                    }
+                    else
+                    {
+                        target.SetValue(property.DependencyProperty, property.OriginalLocalValue);
+                    }
+                }
+            }
+        }
+
+        private sealed class IndicatorBrushPropertySnapshot
+        {
+            public DependencyProperty DependencyProperty { get; set; }
+            public object OriginalLocalValue { get; set; }
+        }
+
+        private static DependencyProperty FindDependencyProperty(Type type, string propertyName)
+        {
+            if (type == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return null;
+            }
+
+            for (Type current = type; current != null; current = current.BaseType)
+            {
+                FieldInfo field = current.GetField(
+                    propertyName + "Property",
+                    BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+
+                if (field?.GetValue(null) is DependencyProperty dependencyProperty)
+                {
+                    return dependencyProperty;
+                }
+            }
+
+            return null;
+        }
+
+        private sealed class StatusStripItemSnapshot
+        {
+            public System.Windows.Forms.ToolStripItem Item { get; private set; }
+            public System.Drawing.Color BackColor { get; private set; }
+            public System.Drawing.Color ForeColor { get; private set; }
+
+            public static StatusStripItemSnapshot FromItem(System.Windows.Forms.ToolStripItem item)
+            {
+                return new StatusStripItemSnapshot
+                {
+                    Item = item,
+                    BackColor = item?.BackColor ?? System.Drawing.SystemColors.Control,
+                    ForeColor = item?.ForeColor ?? System.Drawing.SystemColors.ControlText
+                };
+            }
+        }
+
         private sealed class SolidStatusStripRenderer : System.Windows.Forms.ToolStripProfessionalRenderer
         {
             public SolidStatusStripRenderer(System.Drawing.Color backColor, System.Drawing.Color foreColor)
@@ -629,6 +858,8 @@ namespace SSMS_EnvTabs
                 return false;
             }
 
+            CaptureIndicatorBrushState(indicator);
+
             bool changed = false;
 
             if (indicator is Control control)
@@ -694,6 +925,8 @@ namespace SSMS_EnvTabs
 
             if (parent != null)
             {
+                CaptureIndicatorBrushState(parent);
+
                 if (TrySetBrushProperty(parent, "Background", brush)
                     || TrySetBrushProperty(parent, "BorderBrush", brush)
                     || TrySetBrushProperty(parent, "Fill", brush)
@@ -706,7 +939,7 @@ namespace SSMS_EnvTabs
             return changed;
         }
 
-        private void TryClearLineIndicatorColor(IVsWindowFrame frame)
+        private void TryRestoreLineIndicatorColor(IVsWindowFrame frame)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -717,38 +950,51 @@ namespace SSMS_EnvTabs
 
             foreach (DependencyObject indicator in indicators)
             {
-                TryClearIndicatorBackground(indicator);
+                TryRestoreIndicatorBackground(indicator);
             }
         }
 
-        private static void TryClearIndicatorBackground(DependencyObject indicator)
+        private static void TryRestoreIndicatorBackground(DependencyObject indicator)
         {
-            if (indicator is Control control)
+            RestoreIndicatorBrushState(indicator);
+
+            DependencyObject parent = null;
+            try
             {
-                control.ClearValue(Control.BackgroundProperty);
+                parent = VisualTreeHelper.GetParent(indicator);
+            }
+            catch
+            {
+                parent = null;
             }
 
-            if (indicator is Border border)
+            if (parent != null)
             {
-                border.ClearValue(Border.BackgroundProperty);
+                RestoreIndicatorBrushState(parent);
+            }
+        }
+
+        private static void CaptureIndicatorBrushState(DependencyObject target)
+        {
+            if (target == null || originalIndicatorBrushState.TryGetValue(target, out _))
+            {
+                return;
             }
 
-            if (indicator is Panel panel)
+            var snapshot = new IndicatorBrushSnapshot();
+            snapshot.CaptureFrom(target);
+            originalIndicatorBrushState.Add(target, snapshot);
+        }
+
+        private static void RestoreIndicatorBrushState(DependencyObject target)
+        {
+            if (target == null || !originalIndicatorBrushState.TryGetValue(target, out IndicatorBrushSnapshot snapshot))
             {
-                panel.ClearValue(Panel.BackgroundProperty);
+                return;
             }
 
-            if (indicator is System.Windows.Shapes.Shape shape)
-            {
-                shape.ClearValue(System.Windows.Shapes.Shape.FillProperty);
-                shape.ClearValue(System.Windows.Shapes.Shape.StrokeProperty);
-            }
-
-            TryClearBrushProperty(indicator, "Background");
-            TryClearBrushProperty(indicator, "BorderBrush");
-            TryClearBrushProperty(indicator, "Foreground");
-            TryClearBrushProperty(indicator, "Fill");
-            TryClearBrushProperty(indicator, "Stroke");
+            snapshot.RestoreTo(target);
+            originalIndicatorBrushState.Remove(target);
         }
 
         private static bool TrySetBrushProperty(object target, string propertyName, Brush brush)

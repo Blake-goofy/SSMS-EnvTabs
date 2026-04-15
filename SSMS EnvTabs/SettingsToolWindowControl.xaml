@@ -565,8 +565,8 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
-                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Color line indicator" />
-                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs colors the editor line indicator to match the active connection group." />
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Color line indicator" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Initial value for new connection groups. Each group can override this in its own settings." />
                             </StackPanel>
                             <CheckBox Grid.Column="1" x:Name="LineIndicatorColorToggle" Style="{StaticResource SwitchToggleStyle}" />
                         </Grid>
@@ -578,8 +578,8 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
-                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Color status bar" />
-                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="When enabled, EnvTabs colors the query window status bar to match the active connection group." />
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Color status bar" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Initial value for new connection groups. Each group can override this in its own settings." />
                             </StackPanel>
                             <CheckBox Grid.Column="1" x:Name="StatusBarColorToggle" Style="{StaticResource SwitchToggleStyle}" />
                         </Grid>

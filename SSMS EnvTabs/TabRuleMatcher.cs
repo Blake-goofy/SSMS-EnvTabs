@@ -16,8 +16,10 @@ namespace SSMS_EnvTabs
             public string Database { get; }
             public Regex ServerRegex { get; }
             public Regex DatabaseRegex { get; }
+            public bool? EnableLineIndicatorColor { get; }
+            public bool? EnableStatusBarColor { get; }
 
-            public CompiledRule(string groupName, int priority, int? colorIndex, string server, string database, Regex serverRegex, Regex databaseRegex)
+            public CompiledRule(string groupName, int priority, int? colorIndex, string server, string database, Regex serverRegex, Regex databaseRegex, bool? enableLineIndicatorColor = null, bool? enableStatusBarColor = null)
             {
                 GroupName = groupName;
                 Priority = priority;
@@ -26,6 +28,8 @@ namespace SSMS_EnvTabs
                 Database = database;
                 ServerRegex = serverRegex;
                 DatabaseRegex = databaseRegex;
+                EnableLineIndicatorColor = enableLineIndicatorColor;
+                EnableStatusBarColor = enableStatusBarColor;
             }
         }
 
@@ -109,7 +113,7 @@ namespace SSMS_EnvTabs
                 Regex serverRegex = CreateLikeRegexOrNull(server);
                 Regex databaseRegex = CreateLikeRegexOrNull(database);
 
-                rules.Add(new CompiledRule(groupName, rule.Priority, rule.ColorIndex, server, database, serverRegex, databaseRegex));
+                rules.Add(new CompiledRule(groupName, rule.Priority, rule.ColorIndex, server, database, serverRegex, databaseRegex, rule.EnableLineIndicatorColor, rule.EnableStatusBarColor));
             }
             
             return rules

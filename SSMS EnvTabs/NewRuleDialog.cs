@@ -23,6 +23,8 @@ namespace SSMS_EnvTabs
         public int? SelectedColorIndex { get; private set; }
         public bool OpenConfigRequested { get; private set; }
         public string ServerAlias { get; private set; }
+        public bool? EnableLineIndicatorColor { get; private set; }
+        public bool? EnableStatusBarColor { get; private set; }
         public event Action<string> AliasConfirmed;
 
         private TextBox txtName;
@@ -36,6 +38,9 @@ namespace SSMS_EnvTabs
         private TextBox txtAlias;
         private Button btnNext;
         private Button btnCancelAlias;
+
+        private CheckBox chkLineIndicator;
+        private CheckBox chkStatusBar;
 
         private StackPanel panelRuleButtons;
         private StackPanel panelAliasButtons;
@@ -97,6 +102,8 @@ namespace SSMS_EnvTabs
             public bool HideGroupNameRow { get; set; }
             public bool IsEditMode { get; set; }
             public IEnumerable<int> UsedColorIndexes { get; set; }
+            public bool InitialLineIndicatorColor { get; set; } = true;
+            public bool InitialStatusBarColor { get; set; } = true;
         }
 
         public NewRuleDialog(NewRuleDialogOptions options)
@@ -230,6 +237,7 @@ namespace SSMS_EnvTabs
             ApplyComboBoxPopupTheme(cmbColor);
             ApplyComboBoxTemplate(cmbColor);
             ApplyDialogButtonStyles();
+            ApplyCheckBoxStyles();
         }
 
         private static void ApplyControlBrushes(Control control)
@@ -393,6 +401,102 @@ namespace SSMS_EnvTabs
             ApplyButtonStyle(btnCancel, secondaryStyle);
             ApplyButtonStyle(btnOpenConfig, secondaryStyle);
             ApplyButtonStyle(btnCancelAlias, secondaryStyle);
+        }
+
+        private void ApplyCheckBoxStyles()
+        {
+            var baseBackground = TryFindResource(EnvironmentColors.ToolWindowBackgroundBrushKey) as Brush
+                ?? Brushes.Transparent;
+
+            bool isLightTheme = GetRelativeLuminance(GetBrushColor(baseBackground, Colors.White)) > 0.6;
+
+            var accentColor = (Color)ColorConverter.ConvertFromString(isLightTheme ? "#5649B0" : "#9184EE");
+            var accentBrush = new SolidColorBrush(accentColor);
+            accentBrush.Freeze();
+
+            var checkmarkBrush = isLightTheme ? Brushes.White : Brushes.Black;
+            var borderBrush = isLightTheme
+                ? new SolidColorBrush(Color.FromArgb(102, 0, 0, 0))
+                : new SolidColorBrush(Color.FromArgb(102, 255, 255, 255));
+            borderBrush.Freeze();
+
+            var hoverBorderBrush = isLightTheme
+                ? new SolidColorBrush(Color.FromArgb(160, 0, 0, 0))
+                : new SolidColorBrush(Color.FromArgb(160, 255, 255, 255));
+            hoverBorderBrush.Freeze();
+
+            var style = CreateCheckBoxStyle(accentBrush, checkmarkBrush, borderBrush, hoverBorderBrush);
+
+            if (chkLineIndicator != null) chkLineIndicator.Style = style;
+            if (chkStatusBar != null) chkStatusBar.Style = style;
+        }
+
+        private static Style CreateCheckBoxStyle(Brush accentBrush, Brush checkmarkBrush, Brush borderBrush, Brush hoverBorderBrush)
+        {
+            var style = new Style(typeof(CheckBox));
+            style.Setters.Add(new Setter(CheckBox.VerticalContentAlignmentProperty, VerticalAlignment.Center));
+
+            var template = new ControlTemplate(typeof(CheckBox));
+
+            // Root: horizontal stack of box + content
+            var root = new FrameworkElementFactory(typeof(StackPanel));
+            root.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+            root.SetValue(StackPanel.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            // Outer border: 18x18 rounded box
+            var box = new FrameworkElementFactory(typeof(Border));
+            box.Name = "Box";
+            box.SetValue(Border.WidthProperty, 18.0);
+            box.SetValue(Border.HeightProperty, 18.0);
+            box.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+            box.SetValue(Border.BorderThicknessProperty, new Thickness(1.5));
+            box.SetValue(Border.BorderBrushProperty, borderBrush);
+            box.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+            box.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Center);
+            box.SetValue(Border.MarginProperty, new Thickness(0, 0, 6, 0));
+
+            // Checkmark path
+            var checkmark = new FrameworkElementFactory(typeof(Path));
+            checkmark.Name = "Checkmark";
+            checkmark.SetValue(Path.DataProperty, Geometry.Parse("M3,8 L6.5,11.5 L13,4"));
+            checkmark.SetValue(Path.StrokeProperty, checkmarkBrush);
+            checkmark.SetValue(Path.StrokeThicknessProperty, 2.0);
+            checkmark.SetValue(Path.StretchProperty, Stretch.None);
+            checkmark.SetValue(Path.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            checkmark.SetValue(Path.VerticalAlignmentProperty, VerticalAlignment.Center);
+            checkmark.SetValue(Path.VisibilityProperty, Visibility.Collapsed);
+
+            box.AppendChild(checkmark);
+            root.AppendChild(box);
+
+            // Content presenter
+            var contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            contentPresenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            contentPresenter.SetValue(ContentPresenter.MarginProperty, new Thickness(0));
+            contentPresenter.SetBinding(ContentPresenter.ContentProperty, new Binding("Content") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
+
+            root.AppendChild(contentPresenter);
+            template.VisualTree = root;
+
+            // Checked trigger: fill box with accent, show checkmark
+            var checkedTrigger = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
+            checkedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, accentBrush, "Box"));
+            checkedTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, accentBrush, "Box"));
+            checkedTrigger.Setters.Add(new Setter(Path.VisibilityProperty, Visibility.Visible, "Checkmark"));
+            template.Triggers.Add(checkedTrigger);
+
+            // Hover trigger: darken border when unchecked
+            var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, hoverBorderBrush, "Box"));
+            template.Triggers.Add(hoverTrigger);
+
+            // Disabled trigger
+            var disabledTrigger = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
+            disabledTrigger.Setters.Add(new Setter(UIElement.OpacityProperty, 0.55));
+            template.Triggers.Add(disabledTrigger);
+
+            style.Setters.Add(new Setter(Control.TemplateProperty, template));
+            return style;
         }
 
         private static void ApplyButtonStyle(Button button, Style style)
@@ -743,9 +847,70 @@ namespace SSMS_EnvTabs
             AddLabelValueRow(ruleGrid, row++, "Color", cmbColor);
 
             stack.Children.Add(ruleGrid);
+
+            stack.Children.Add(BuildAdvancedSection(options));
+
             panel.Children.Add(stack);
 
             return panel;
+        }
+
+        private UIElement BuildAdvancedSection(NewRuleDialogOptions options)
+        {
+            var advancedContent = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                Margin = new Thickness(0, 4, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+
+            chkLineIndicator = new CheckBox
+            {
+                Content = "Color the line indicator",
+                IsChecked = options.InitialLineIndicatorColor,
+                Margin = new Thickness(2, 4, 0, 2)
+            };
+            chkLineIndicator.SetResourceReference(Control.ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+
+            chkStatusBar = new CheckBox
+            {
+                Content = "Color the status bar",
+                IsChecked = options.InitialStatusBarColor,
+                Margin = new Thickness(2, 2, 0, 4)
+            };
+            chkStatusBar.SetResourceReference(Control.ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+
+            advancedContent.Children.Add(chkLineIndicator);
+            advancedContent.Children.Add(chkStatusBar);
+
+            var toggleText = new TextBlock
+            {
+                Text = "Advanced \u25BC",
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Margin = new Thickness(0, 6, 2, 0),
+                FontSize = SystemFonts.MessageFontSize - 1,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            toggleText.SetResourceReference(TextBlock.ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+
+            toggleText.MouseLeftButtonUp += (s, e) =>
+            {
+                if (advancedContent.Visibility == Visibility.Collapsed)
+                {
+                    advancedContent.Visibility = Visibility.Visible;
+                    toggleText.Text = "Advanced \u25B2";
+                }
+                else
+                {
+                    advancedContent.Visibility = Visibility.Collapsed;
+                    toggleText.Text = "Advanced \u25BC";
+                }
+            };
+
+            var container = new StackPanel { Orientation = Orientation.Vertical };
+            container.Children.Add(toggleText);
+            container.Children.Add(advancedContent);
+            return container;
         }
 
         private StackPanel BuildRuleButtonPanel()
@@ -765,6 +930,8 @@ namespace SSMS_EnvTabs
                 {
                     SelectedColorIndex = item.Index; // null for the "None" item
                 }
+                EnableLineIndicatorColor = chkLineIndicator?.IsChecked;
+                EnableStatusBarColor = chkStatusBar?.IsChecked;
                 dialogResult = WinFormsDialogResult.OK;
                 this.DialogResult = true;
             };
@@ -801,6 +968,8 @@ namespace SSMS_EnvTabs
                 {
                     SelectedColorIndex = item.Index; // null for the "None" item
                 }
+                EnableLineIndicatorColor = chkLineIndicator?.IsChecked;
+                EnableStatusBarColor = chkStatusBar?.IsChecked;
                 OpenConfigRequested = true;
                 dialogResult = WinFormsDialogResult.Yes;
                 this.DialogResult = true;

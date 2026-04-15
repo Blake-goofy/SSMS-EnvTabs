@@ -17,8 +17,8 @@
     "newQueryRenameStyle": "[#]. [groupName]",
     "savedFileRenameStyle": "[filename]",
     "enableRemoveDotSql": true,
-    "enableLineIndicatorColor": true,
-    "enableStatusBarColor": true
+    "initialLineIndicatorColor": true,
+    "initialStatusBarColor": true
   },
   "manualRegexLines": null,
   "serverAlias": {
@@ -30,7 +30,9 @@
       "server": "MY-APP-SERVER",
       "database": "MyDb",
       "priority": 10,
-      "colorIndex": 9
+      "colorIndex": 9,
+      "enableLineIndicatorColor": true,
+      "enableStatusBarColor": true
     }
   ]
 }
