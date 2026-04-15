@@ -19,8 +19,11 @@ namespace SSMS_EnvTabs
     internal static class UpdateChecker
     {
         private const string ReleasesApiUrl = "https://api.github.com/repos/Blake-goofy/SSMS-EnvTabs/releases/latest";
+        private const string StagedVsixFilePattern = "SSMS-EnvTabs-*.vsix";
+        private const string Sha256DigestPrefix = "sha256:";
         private static int pendingStartupCheck;
         private static readonly object diagnosticsLock = new object();
+        private static readonly object stagedVsixLock = new object();
         private static string lastUpdateResult = "No update check has run yet.";
         internal static event Action LastUpdateResultChanged;
 
@@ -69,6 +72,8 @@ namespace SSMS_EnvTabs
             {
                 return;
             }
+
+            CleanupDownloadedVsixFiles();
 
             if (settings?.EnableUpdateChecks == false)
             {
@@ -422,11 +427,11 @@ namespace SSMS_EnvTabs
                 try
                 {
                     SetLastUpdateResult("Preparing update package download.");
-                    string expectedSha256 = await GetExpectedSha256Async(release, vsixAsset);
+                    string expectedSha256 = GetAssetSha256(vsixAsset);
                     if (string.IsNullOrWhiteSpace(expectedSha256))
                     {
-                        EnvTabsLog.Info("Update install aborted: .sha256 release asset missing or invalid.");
-                        SetLastUpdateResult("Update install aborted: missing or invalid .sha256 release asset.");
+                        EnvTabsLog.Info("Update install aborted: GitHub release digest missing or invalid.");
+                        SetLastUpdateResult("Update install aborted: missing or invalid GitHub release digest.");
                         OpenUrl(release.HtmlUrl);
                         return;
                     }
@@ -482,11 +487,11 @@ namespace SSMS_EnvTabs
                 try
                 {
                     SetLastUpdateResult("Downloading update package in background.");
-                    string expectedSha256 = await GetExpectedSha256Async(release, vsixAsset);
+                    string expectedSha256 = GetAssetSha256(vsixAsset);
                     if (string.IsNullOrWhiteSpace(expectedSha256))
                     {
-                        EnvTabsLog.Info("Stage download aborted: .sha256 asset missing or invalid.");
-                        SetLastUpdateResult("Update download failed: missing or invalid .sha256 release asset.");
+                        EnvTabsLog.Info("Stage download aborted: GitHub release digest missing or invalid.");
+                        SetLastUpdateResult("Update download failed: missing or invalid GitHub release digest.");
                         return;
                     }
 
@@ -501,7 +506,7 @@ namespace SSMS_EnvTabs
                         return;
                     }
 
-                    stagedVsixPath = tempPath;
+                    ReplaceStagedVsixPath(tempPath);
                     EnvTabsLog.Info($"Update package staged at: {tempPath}");
                     SetLastUpdateResult("Update package downloaded and verified. Ready to install.");
                 }
@@ -580,124 +585,96 @@ namespace SSMS_EnvTabs
             return null;
         }
 
-        private static GitHubAsset GetChecksumAsset(GitHubRelease release, string vsixAssetName)
+        private static string GetAssetSha256(GitHubAsset asset)
         {
-            if (release?.Assets == null)
+            string digest = asset?.Digest;
+            if (string.IsNullOrWhiteSpace(digest))
             {
                 return null;
             }
 
-            string expectedName = string.IsNullOrWhiteSpace(vsixAssetName) ? null : vsixAssetName + ".sha256";
-            if (!string.IsNullOrWhiteSpace(expectedName))
+            string trimmed = digest.Trim();
+            if (!trimmed.StartsWith(Sha256DigestPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                foreach (var asset in release.Assets)
-                {
-                    if (asset == null || string.IsNullOrWhiteSpace(asset.Name))
-                    {
-                        continue;
-                    }
-
-                    if (string.Equals(asset.Name, expectedName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return asset;
-                    }
-                }
+                return null;
             }
 
-            foreach (var asset in release.Assets)
+            string value = trimmed.Substring(Sha256DigestPrefix.Length).Trim();
+            if (Regex.IsMatch(value, "^[A-Fa-f0-9]{64}$"))
             {
-                if (asset == null || string.IsNullOrWhiteSpace(asset.Name))
-                {
-                    continue;
-                }
-
-                if (asset.Name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
-                {
-                    return asset;
-                }
+                return value.ToLowerInvariant();
             }
 
             return null;
         }
 
-        private static async Task<string> GetExpectedSha256Async(GitHubRelease release, GitHubAsset vsixAsset)
+        private static void CleanupDownloadedVsixFiles()
         {
-            var checksumAsset = GetChecksumAsset(release, vsixAsset?.Name);
-            if (checksumAsset == null || string.IsNullOrWhiteSpace(checksumAsset.DownloadUrl))
+            lock (stagedVsixLock)
             {
-                return null;
+                string activePath = stagedVsixPath;
+                stagedVsixPath = null;
+                pendingUpdateOnClose = false;
+
+                try
+                {
+                    string tempDirectory = Path.GetTempPath();
+                    foreach (string filePath in Directory.GetFiles(tempDirectory, StagedVsixFilePattern))
+                    {
+                        TryDeleteFile(filePath);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(activePath) && File.Exists(activePath))
+                    {
+                        TryDeleteFile(activePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Cleanup staged VSIX files failed: {ex.Message}");
+                }
+            }
+        }
+
+        private static void ReplaceStagedVsixPath(string tempPath)
+        {
+            if (string.IsNullOrWhiteSpace(tempPath))
+            {
+                return;
+            }
+
+            lock (stagedVsixLock)
+            {
+                string previousPath = stagedVsixPath;
+                stagedVsixPath = tempPath;
+
+                if (!string.IsNullOrWhiteSpace(previousPath) &&
+                    !string.Equals(previousPath, tempPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteFile(previousPath);
+                }
+            }
+        }
+
+        private static void TryDeleteFile(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
             }
 
             try
             {
-                using (var client = new HttpClient())
+                if (File.Exists(filePath))
                 {
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("SSMS-EnvTabs");
-                    string checksumText = await client.GetStringAsync(checksumAsset.DownloadUrl);
-                    return ParseSha256FromText(checksumText, vsixAsset?.Name);
+                    File.Delete(filePath);
+                    EnvTabsLog.Info($"Deleted staged VSIX: {filePath}");
                 }
             }
             catch (Exception ex)
             {
-                EnvTabsLog.Info($"Checksum download failed: {ex.Message}");
-                return null;
+                EnvTabsLog.Info($"Delete staged VSIX failed for '{filePath}': {ex.Message}");
             }
-        }
-
-        private static string ParseSha256FromText(string checksumText, string vsixAssetName)
-        {
-            if (string.IsNullOrWhiteSpace(checksumText))
-            {
-                return null;
-            }
-
-            string[] lines = checksumText
-                .Replace("\r\n", "\n")
-                .Replace("\r", "\n")
-                .Split('\n');
-
-            if (!string.IsNullOrWhiteSpace(vsixAssetName))
-            {
-                foreach (string rawLine in lines)
-                {
-                    string line = rawLine?.Trim();
-                    if (string.IsNullOrWhiteSpace(line))
-                    {
-                        continue;
-                    }
-
-                    // Common format: <hash>  <fileName>
-                    var match = Regex.Match(line, @"^([A-Fa-f0-9]{64})\s+\*?(.+)$");
-                    if (match.Success)
-                    {
-                        string fileToken = match.Groups[2].Value.Trim();
-                        if (fileToken.Equals(vsixAssetName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return match.Groups[1].Value.ToLowerInvariant();
-                        }
-                    }
-
-                    // Alternate format: SHA256(fileName)= <hash>
-                    var alt = Regex.Match(line, @"^SHA256\((.+)\)\s*=\s*([A-Fa-f0-9]{64})$", RegexOptions.IgnoreCase);
-                    if (alt.Success)
-                    {
-                        string fileToken = alt.Groups[1].Value.Trim();
-                        if (fileToken.Equals(vsixAssetName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return alt.Groups[2].Value.ToLowerInvariant();
-                        }
-                    }
-                }
-            }
-
-            // Fallback: accept the first 64-hex token from the file.
-            var firstHash = Regex.Match(checksumText, @"\b([A-Fa-f0-9]{64})\b");
-            if (firstHash.Success)
-            {
-                return firstHash.Groups[1].Value.ToLowerInvariant();
-            }
-
-            return null;
         }
 
         private static string ComputeSha256Hex(string filePath)
@@ -828,6 +805,9 @@ namespace SSMS_EnvTabs
         {
             [DataMember(Name = "name")]
             public string Name { get; set; }
+
+            [DataMember(Name = "digest")]
+            public string Digest { get; set; }
 
             [DataMember(Name = "browser_download_url")]
             public string DownloadUrl { get; set; }
