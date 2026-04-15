@@ -64,26 +64,25 @@ namespace SSMS_EnvTabs
             public SolidColorBrush SwatchBrush => new SolidColorBrush(SwatchColor);
         }
 
-        private static readonly List<ColorItem> ColorList = new List<ColorItem>
+        private static readonly List<ColorItem> ColorList = BuildColorList();
+
+        private static List<ColorItem> BuildColorList()
         {
-            new ColorItem { Index = null, Name = "None", SwatchColor = Colors.Transparent },
-            new ColorItem { Index = 0, Name = "Lavender", SwatchColor = (Color)ColorConverter.ConvertFromString("#9083ef") },
-            new ColorItem { Index = 1, Name = "Gold", SwatchColor = (Color)ColorConverter.ConvertFromString("#d0b132") },
-            new ColorItem { Index = 2, Name = "Cyan", SwatchColor = (Color)ColorConverter.ConvertFromString("#30b1cd") },
-            new ColorItem { Index = 3, Name = "Burgundy", SwatchColor = (Color)ColorConverter.ConvertFromString("#cf6468") },
-            new ColorItem { Index = 4, Name = "Green", SwatchColor = (Color)ColorConverter.ConvertFromString("#6ba12a") },
-            new ColorItem { Index = 5, Name = "Brown", SwatchColor = (Color)ColorConverter.ConvertFromString("#bc8f6f") },
-            new ColorItem { Index = 6, Name = "Royal Blue", SwatchColor = (Color)ColorConverter.ConvertFromString("#5bb2fa") },
-            new ColorItem { Index = 7, Name = "Pumpkin", SwatchColor = (Color)ColorConverter.ConvertFromString("#d67441") },
-            new ColorItem { Index = 8, Name = "Gray", SwatchColor = (Color)ColorConverter.ConvertFromString("#bdbcbc") },
-            new ColorItem { Index = 9, Name = "Volt", SwatchColor = (Color)ColorConverter.ConvertFromString("#cbcc38") },
-            new ColorItem { Index = 10, Name = "Teal", SwatchColor = (Color)ColorConverter.ConvertFromString("#2aa0a4") },
-            new ColorItem { Index = 11, Name = "Magenta", SwatchColor = (Color)ColorConverter.ConvertFromString("#d957a7") },
-            new ColorItem { Index = 12, Name = "Mint", SwatchColor = (Color)ColorConverter.ConvertFromString("#6bc6a5") },
-            new ColorItem { Index = 13, Name = "Dark Brown", SwatchColor = (Color)ColorConverter.ConvertFromString("#946a5b") },
-            new ColorItem { Index = 14, Name = "Blue", SwatchColor = (Color)ColorConverter.ConvertFromString("#6a8ec6") },
-            new ColorItem { Index = 15, Name = "Pink", SwatchColor = (Color)ColorConverter.ConvertFromString("#e0a3a5") }
-        };
+            var list = new List<ColorItem>
+            {
+                new ColorItem { Index = null, Name = "None", SwatchColor = Colors.Transparent }
+            };
+            for (int i = 0; i < ColorPalette.Count; i++)
+            {
+                list.Add(new ColorItem
+                {
+                    Index = i,
+                    Name = ColorPalette.Names[i],
+                    SwatchColor = (Color)ColorConverter.ConvertFromString(ColorPalette.Hex[i])
+                });
+            }
+            return list;
+        }
 
         public sealed class NewRuleDialogOptions
         {

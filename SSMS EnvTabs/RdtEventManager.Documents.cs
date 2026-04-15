@@ -38,13 +38,6 @@ namespace SSMS_EnvTabs
         };
         private const string StatusBarLeftContainerName = "PART_StatusBarLeftFrameControlContainer";
 
-        private static readonly string[] IndicatorPaletteHex = new[]
-        {
-            "#9083ef", "#d0b132", "#30b1cd", "#cf6468",
-            "#6ba12a", "#bc8f6f", "#5bb2fa", "#d67441",
-            "#bdbcbc", "#cbcc38", "#2aa0a4", "#d957a7",
-            "#6bc6a5", "#946a5b", "#6a8ec6", "#e0a3a5"
-        };
         private static readonly object statusBarProbeLock = new object();
         private static readonly HashSet<string> loggedStatusBarProbeKeys = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> loggedStatusStripInventoryKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -78,7 +71,7 @@ namespace SSMS_EnvTabs
             var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
             var matchedRule = TabRuleMatcher.MatchRule(rules, server, database);
             int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
-            if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= IndicatorPaletteHex.Length)
+            if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length)
             {
                 EnvTabsLog.Info($"LineIndicator: skipped (no valid color index) cookie={docCookie} server='{server}' db='{database}'");
                 TryClearLineIndicatorColor(frame);
@@ -123,7 +116,7 @@ namespace SSMS_EnvTabs
             var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
             var matchedRule = TabRuleMatcher.MatchRule(rules, server, database);
             int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
-            if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= IndicatorPaletteHex.Length)
+            if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length)
             {
                 return;
             }
@@ -142,7 +135,7 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
 
             targetDescription = null;
-            if (frame == null || colorIndex < 0 || colorIndex >= IndicatorPaletteHex.Length)
+            if (frame == null || colorIndex < 0 || colorIndex >= ColorPalette.Hex.Length)
             {
                 return false;
             }
@@ -167,12 +160,12 @@ namespace SSMS_EnvTabs
         private static bool TryApplyWinFormsStatusStripColor(System.Windows.Forms.StatusStrip statusStrip, int colorIndex, out string textColorName)
         {
             textColorName = null;
-            if (statusStrip == null || statusStrip.IsDisposed || colorIndex < 0 || colorIndex >= IndicatorPaletteHex.Length)
+            if (statusStrip == null || statusStrip.IsDisposed || colorIndex < 0 || colorIndex >= ColorPalette.Hex.Length)
             {
                 return false;
             }
 
-            var backColor = System.Drawing.ColorTranslator.FromHtml(IndicatorPaletteHex[colorIndex]);
+            var backColor = System.Drawing.ColorTranslator.FromHtml(ColorPalette.Hex[colorIndex]);
             var foreColor = GetReadableStatusTextColor(backColor);
             var renderer = new SolidStatusStripRenderer(backColor, foreColor);
             textColorName = IsNearBlack(foreColor) ? "black" : "white";
@@ -615,12 +608,12 @@ namespace SSMS_EnvTabs
 
         private static Brush BuildIndicatorBrush(int colorIndex)
         {
-            if (colorIndex < 0 || colorIndex >= IndicatorPaletteHex.Length)
+            if (colorIndex < 0 || colorIndex >= ColorPalette.Hex.Length)
             {
                 return null;
             }
 
-            var brush = (SolidColorBrush)new BrushConverter().ConvertFromString(IndicatorPaletteHex[colorIndex]);
+            var brush = (SolidColorBrush)new BrushConverter().ConvertFromString(ColorPalette.Hex[colorIndex]);
             if (brush != null && brush.CanFreeze)
             {
                 brush.Freeze();

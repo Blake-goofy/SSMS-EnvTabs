@@ -150,14 +150,9 @@ namespace SSMS_EnvTabs
                 {
                     bool done = HandlePotentialChange(docCookie, frame, reason: "AttributeChange");
 
-                    // Force a retry if it's an AttributeChange, because the caption is likely stale.
                     if (!done)
                     {
                         ScheduleRenameRetry(docCookie, "AttributeChange");
-                    }
-                    else
-                    {
-                        ScheduleRenameRetry(docCookie, "AttributeChange:Force");
                     }
                 }
             }

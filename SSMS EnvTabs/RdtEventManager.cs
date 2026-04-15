@@ -13,7 +13,6 @@ namespace SSMS_EnvTabs
 {
     internal sealed partial class RdtEventManager : IVsRunningDocTableEvents3, IVsSelectionEvents, IDisposable
     {
-        internal static bool SuppressVerboseLogs;
         private const int RenameRetryCount = 20; // Increased to handle slow connection changes (up to 5s)
         private const int RenameRetryDelayMs = 250;
         private const int LineIndicatorRetryCount = 12;
@@ -561,10 +560,6 @@ namespace SSMS_EnvTabs
                 return;
             }
 
-            SuppressVerboseLogs = true;
-            try
-            {
-
             var docs = GetOpenDocumentsSnapshot();
             var seen = new HashSet<uint>();
 
@@ -594,7 +589,6 @@ namespace SSMS_EnvTabs
                 }
                 else
                 {
-                    // First observation for this cookie (no log; only log on change)
                     lastConnectionByCookie[doc.Cookie] = (newServer, newDatabase);
 
                     if (config.Settings?.EnableAutoRename == false && config.Settings?.EnableAutoColor == true)
@@ -603,7 +597,6 @@ namespace SSMS_EnvTabs
                     }
                 }
 
-                // Caption change detection (execution resets to default)
                 string caption = doc.Caption ?? string.Empty;
                 bool hadPreviousCaption = lastCaptionByCookie.TryGetValue(doc.Cookie, out string previousCaption);
                 bool captionChanged = !hadPreviousCaption || !string.Equals(previousCaption ?? string.Empty, caption, StringComparison.OrdinalIgnoreCase);
@@ -623,17 +616,11 @@ namespace SSMS_EnvTabs
                 }
             }
 
-            // Clean up stale entries
             var staleCookies = lastConnectionByCookie.Keys.Where(c => !seen.Contains(c)).ToList();
             foreach (var cookie in staleCookies)
             {
                 lastConnectionByCookie.Remove(cookie);
                 lastCaptionByCookie.Remove(cookie);
-            }
-            }
-            finally
-            {
-                SuppressVerboseLogs = false;
             }
         }
 

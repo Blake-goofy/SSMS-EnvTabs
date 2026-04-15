@@ -52,6 +52,7 @@
     <Compile Include="CheckUpdatesCommand.cs" />
     <Compile Include="ColorConfigPathResolution.cs" />
     <Compile Include="ColorByRegexConfigWriter.cs" />
+    <Compile Include="ColorPalette.cs" />
     <Compile Include="EditActiveConnectionRuleCommand.cs" />
     <Compile Include="EnvTabsLog.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

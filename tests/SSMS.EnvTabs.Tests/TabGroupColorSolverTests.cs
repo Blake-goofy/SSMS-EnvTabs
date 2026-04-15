@@ -36,5 +36,78 @@ namespace SSMS_EnvTabs.Tests
             Assert.IsNull(TabGroupColorSolver.Solve("abc", -1));
             Assert.IsNull(TabGroupColorSolver.Solve("abc", 16));
         }
+
+        [TestMethod]
+        public void Solve_FindsSaltForAllSixteenColorIndices()
+        {
+            const string baseRegex = "(?:^|[\\\\/])(?:test)\\.sql$";
+
+            for (int target = 0; target <= 15; target++)
+            {
+                string salt = TabGroupColorSolver.Solve(baseRegex, target);
+                Assert.IsNotNull(salt, $"Expected salt for color index {target}.");
+
+                string fullRegex = baseRegex + "(?#salt:" + salt + ")";
+                int hash = TabGroupColorSolver.GetSsmsStableHashCode(fullRegex);
+                Assert.AreEqual(target, Math.Abs(hash) % 16, $"Salt did not produce expected color index {target}.");
+            }
+        }
+
+        [TestMethod]
+        public void SolveForColor_ReturnsRegexWithSaltAppended()
+        {
+            const string baseRegex = "(?:^|[\\\\/])(?:demo)\\.sql$";
+            const int target = 3;
+
+            string result = TabGroupColorSolver.SolveForColor(baseRegex, target);
+
+            Assert.IsTrue(result.StartsWith(baseRegex), "Result should start with base regex.");
+            Assert.IsTrue(result.Contains("(?#salt:"), "Result should contain salt comment.");
+
+            int hash = TabGroupColorSolver.GetSsmsStableHashCode(result);
+            Assert.AreEqual(target, Math.Abs(hash) % 16);
+        }
+
+        [TestMethod]
+        public void SolveForColor_ReturnsBaseRegexWhenSolveReturnsNull()
+        {
+            string result = TabGroupColorSolver.SolveForColor("abc", -1);
+
+            Assert.AreEqual("abc", result);
+        }
+
+        [TestMethod]
+        public void GetSsmsStableHashCode_DeterministicForSameInput()
+        {
+            const string input = "(?:^|[\\\\/])(?:query1|query2)\\.sql$";
+
+            int hash1 = TabGroupColorSolver.GetSsmsStableHashCode(input);
+            int hash2 = TabGroupColorSolver.GetSsmsStableHashCode(input);
+
+            Assert.AreEqual(hash1, hash2);
+        }
+
+        [TestMethod]
+        public void GetSsmsStableHashCode_DifferentInputsDifferentHashes()
+        {
+            int hash1 = TabGroupColorSolver.GetSsmsStableHashCode("alpha");
+            int hash2 = TabGroupColorSolver.GetSsmsStableHashCode("beta");
+
+            Assert.AreNotEqual(hash1, hash2);
+        }
+
+        [TestMethod]
+        public void GetSsmsStableHashCode_EmptyStringDoesNotThrow()
+        {
+            int hash = TabGroupColorSolver.GetSsmsStableHashCode("");
+            Assert.AreEqual(hash, TabGroupColorSolver.GetSsmsStableHashCode(""));
+        }
+
+        [TestMethod]
+        public void GetSsmsStableHashCode_OddLengthStringDoesNotThrow()
+        {
+            int hash = TabGroupColorSolver.GetSsmsStableHashCode("abc");
+            Assert.AreEqual(hash, TabGroupColorSolver.GetSsmsStableHashCode("abc"));
+        }
     }
 }

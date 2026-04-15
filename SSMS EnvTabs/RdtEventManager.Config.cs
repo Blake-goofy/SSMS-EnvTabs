@@ -286,7 +286,14 @@ namespace SSMS_EnvTabs
                         EnvTabsLog.Info($"Group color override event: {e.ChangeType} - {e.FullPath}");
                         await Task.Delay(500, token);
                         await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
-                        ApplyGroupColorOverridesToConfig();
+                        try
+                        {
+                            ApplyGroupColorOverridesToConfig();
+                        }
+                        catch (Exception applyEx)
+                        {
+                            EnvTabsLog.Info($"ApplyGroupColorOverridesToConfig failed: {applyEx.Message}");
+                        }
                         UpdateColorOnly("GroupColorMapChanged", force: true);
                     }
                     catch (OperationCanceledException)
@@ -372,6 +379,13 @@ namespace SSMS_EnvTabs
             if (updated)
             {
                 SaveConfig(config);
+                // Invalidate compiled rules so the next LoadConfigOrNull recompiles them
+                // with the updated ColorIndex values. Without this, a file-timestamp
+                // cache hit in LoadConfigOrNull would return stale CompiledRules that
+                // still reference the old ColorIndex, causing the line indicator and
+                // status bar to keep the previous color while the tab already changed.
+                cachedRules = null;
+                cachedManualRules = null;
                 EnvTabsLog.Info("Group color overrides saved. Awaiting config watcher reload.");
             }
         }
@@ -618,9 +632,6 @@ namespace SSMS_EnvTabs
         {
             try
             {
-                // EnvTabsLog.Info($"Config file system event: {e.ChangeType} - {e.FullPath}"); 
-
-                // Debounce logic
                 CancellationToken token;
                 lock (debounceLock)
                 {
@@ -633,8 +644,6 @@ namespace SSMS_EnvTabs
                 {
                     try
                     {
-                        // Log inside async task to allow switching to UI thread if needed (though we just write to file off-thread primarily)
-                        // EnvTabsLog.Info handles CheckAccess internally now.
                         EnvTabsLog.Info($"Config file system event: {e.ChangeType} - {e.FullPath}");
 
                         await Task.Delay(500, token);

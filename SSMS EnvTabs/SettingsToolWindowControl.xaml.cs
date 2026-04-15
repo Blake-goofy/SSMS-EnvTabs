@@ -163,26 +163,22 @@ namespace SSMS_EnvTabs
         private const string DefaultSavedFileRenameStyle = "[filename]";
         private const string DefaultConfigResourceName = "SSMS_EnvTabs.DefaultTabGroupConfig.json";
 
-        private static readonly IReadOnlyList<ColorPaletteItem> ColorPalette =
-            new List<ColorPaletteItem>
+        private static readonly IReadOnlyList<ColorPaletteItem> ColorPaletteItems = BuildColorPaletteItems();
+
+        private static IReadOnlyList<ColorPaletteItem> BuildColorPaletteItems()
+        {
+            var list = new List<ColorPaletteItem>(ColorPalette.Count);
+            for (int i = 0; i < ColorPalette.Count; i++)
             {
-                new ColorPaletteItem { Index = 0, Name = "Lavender", Color = (Color)ColorConverter.ConvertFromString("#9083ef") },
-                new ColorPaletteItem { Index = 1, Name = "Gold", Color = (Color)ColorConverter.ConvertFromString("#d0b132") },
-                new ColorPaletteItem { Index = 2, Name = "Cyan", Color = (Color)ColorConverter.ConvertFromString("#30b1cd") },
-                new ColorPaletteItem { Index = 3, Name = "Burgundy", Color = (Color)ColorConverter.ConvertFromString("#cf6468") },
-                new ColorPaletteItem { Index = 4, Name = "Green", Color = (Color)ColorConverter.ConvertFromString("#6ba12a") },
-                new ColorPaletteItem { Index = 5, Name = "Brown", Color = (Color)ColorConverter.ConvertFromString("#bc8f6f") },
-                new ColorPaletteItem { Index = 6, Name = "Royal Blue", Color = (Color)ColorConverter.ConvertFromString("#5bb2fa") },
-                new ColorPaletteItem { Index = 7, Name = "Pumpkin", Color = (Color)ColorConverter.ConvertFromString("#d67441") },
-                new ColorPaletteItem { Index = 8, Name = "Gray", Color = (Color)ColorConverter.ConvertFromString("#bdbcbc") },
-                new ColorPaletteItem { Index = 9, Name = "Volt", Color = (Color)ColorConverter.ConvertFromString("#cbcc38") },
-                new ColorPaletteItem { Index = 10, Name = "Teal", Color = (Color)ColorConverter.ConvertFromString("#2aa0a4") },
-                new ColorPaletteItem { Index = 11, Name = "Magenta", Color = (Color)ColorConverter.ConvertFromString("#d957a7") },
-                new ColorPaletteItem { Index = 12, Name = "Mint", Color = (Color)ColorConverter.ConvertFromString("#6bc6a5") },
-                new ColorPaletteItem { Index = 13, Name = "Dark Brown", Color = (Color)ColorConverter.ConvertFromString("#946a5b") },
-                new ColorPaletteItem { Index = 14, Name = "Blue", Color = (Color)ColorConverter.ConvertFromString("#6a8ec6") },
-                new ColorPaletteItem { Index = 15, Name = "Pink", Color = (Color)ColorConverter.ConvertFromString("#e0a3a5") }
-            };
+                list.Add(new ColorPaletteItem
+                {
+                    Index = i,
+                    Name = ColorPalette.Names[i],
+                    Color = (Color)ColorConverter.ConvertFromString(ColorPalette.Hex[i])
+                });
+            }
+            return list;
+        }
 
         public SettingsToolWindowControl()
         {
@@ -2305,7 +2301,7 @@ namespace SSMS_EnvTabs
                 }
             };
 
-            foreach (ColorPaletteItem color in ColorPalette)
+            foreach (ColorPaletteItem color in ColorPaletteItems)
             {
                 bool isUsed = usedIndexes.Contains(color.Index);
                 string displayName = isUsed ? $"{color.Name} (used)" : color.Name;
@@ -2375,7 +2371,7 @@ namespace SSMS_EnvTabs
                 return "None";
             }
 
-            foreach (ColorPaletteItem color in ColorPalette)
+            foreach (ColorPaletteItem color in ColorPaletteItems)
             {
                 if (color.Index == colorIndex.Value)
                 {
@@ -2435,7 +2431,7 @@ namespace SSMS_EnvTabs
                 return Brushes.Transparent;
             }
 
-            foreach (ColorPaletteItem color in ColorPalette)
+            foreach (ColorPaletteItem color in ColorPaletteItems)
             {
                 if (color.Index == colorIndex.Value)
                 {

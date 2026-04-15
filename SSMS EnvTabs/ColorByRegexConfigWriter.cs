@@ -89,9 +89,9 @@ namespace SSMS_EnvTabs
             {
                 ConfigPathResolved?.Invoke(configPath);
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort
+                EnvTabsLog.Info($"ConfigPathResolved event handler failed: {ex.Message}");
             }
 
             var groupToPaths = safeRules.Count > 0 ? BuildGroupPathMap(lastDocsSnapshot, safeRules) : null;
@@ -309,6 +309,9 @@ namespace SSMS_EnvTabs
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var rule in rules)
             {
+                // Skip null-GroupName (silent) rules — they have no color entry to map.
+                if (string.IsNullOrWhiteSpace(rule.GroupName)) continue;
+
                 groupToPaths.TryGetValue(rule.GroupName, out var paths);
                 string baseRegex = BuildBaseRegex(paths);
                 if (!string.IsNullOrWhiteSpace(baseRegex))
