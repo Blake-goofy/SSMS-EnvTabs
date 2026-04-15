@@ -19,12 +19,15 @@ namespace SSMS_EnvTabs
     internal static class UpdateChecker
     {
         private const string ReleasesApiUrl = "https://api.github.com/repos/Blake-goofy/SSMS-EnvTabs/releases/latest";
-        private const string VsixId = "SSMS_EnvTabs";
-        private const string LegacyVsixId = "SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7";
         private static int pendingStartupCheck;
         private static readonly object diagnosticsLock = new object();
         private static string lastUpdateResult = "No update check has run yet.";
         internal static event Action LastUpdateResultChanged;
+
+        private static string stagedVsixPath;
+        private static GitHubRelease stagedRelease;
+        private static bool pendingUpdateOnClose;
+        private static UpdateInfoBar activeInfoBar;
 
         internal static string LastUpdateResult
         {
@@ -62,6 +65,11 @@ namespace SSMS_EnvTabs
 
         public static void ScheduleCheck(AsyncPackage package, TabGroupSettings settings)
         {
+            if (package == null)
+            {
+                return;
+            }
+
             if (settings?.EnableUpdateChecks == false)
             {
                 EnvTabsLog.Info("Update check skipped: disabled by settings.");
@@ -70,8 +78,35 @@ namespace SSMS_EnvTabs
             }
 
             Interlocked.Exchange(ref pendingStartupCheck, 1);
-            EnvTabsLog.Info("Update check deferred until first valid connected document is opened.");
-            SetLastUpdateResult("Startup update check deferred until first connected query tab.");
+            EnvTabsLog.Info("Update check scheduled shortly after package initialization.");
+            SetLastUpdateResult("Startup update check scheduled.");
+
+            _ = package.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    var token = package.DisposalToken;
+                    await Task.Delay(TimeSpan.FromMilliseconds(900), token);
+
+                    if (Interlocked.CompareExchange(ref pendingStartupCheck, 0, 1) != 1)
+                    {
+                        return;
+                    }
+
+                    EnvTabsLog.Info("Running startup update check after initialization delay.");
+                    SetLastUpdateResult("Running startup update check.");
+                    await CheckForUpdatesAsync(package, token, showUpToDate: false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Ignored
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Startup update check failed: {ex.Message}");
+                    SetLastUpdateResult($"Startup update check failed: {ex.Message}");
+                }
+            });
         }
 
         internal static void NotifyConnectedDocument(AsyncPackage package, TabGroupSettings settings, string server, string database)
@@ -85,34 +120,7 @@ namespace SSMS_EnvTabs
             {
                 Interlocked.Exchange(ref pendingStartupCheck, 0);
                 SetLastUpdateResult("Startup update check canceled because update checks are disabled.");
-                return;
             }
-
-            if (Interlocked.CompareExchange(ref pendingStartupCheck, 0, 1) != 1)
-            {
-                return;
-            }
-
-            _ = package.JoinableTaskFactory.RunAsync(async () =>
-            {
-                try
-                {
-                    var token = package.DisposalToken;
-                    await Task.Delay(TimeSpan.FromMilliseconds(900), token);
-                    EnvTabsLog.Info($"Update check resumed after first connected document. Server='{server}', Database='{database}'.");
-                    SetLastUpdateResult("Running deferred startup update check.");
-                    await CheckForUpdatesAsync(package, token, showUpToDate: false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Ignored
-                }
-                catch (Exception ex)
-                {
-                    EnvTabsLog.Info($"Deferred update check failed: {ex.Message}");
-                    SetLastUpdateResult($"Deferred update check failed: {ex.Message}");
-                }
-            });
         }
 
         public static void CheckNow(AsyncPackage package, TabGroupSettings settings, bool ignoreSettings = true)
@@ -271,6 +279,73 @@ namespace SSMS_EnvTabs
                 ThreadHelper.ThrowIfNotOnUIThread();
                 string latestDisplay = FormatVersion(latestVersion);
                 string currentDisplay = FormatVersion(currentVersion);
+
+                activeInfoBar = new UpdateInfoBar(
+                    package,
+                    latestDisplay,
+                    release?.HtmlUrl,
+                    action => HandleInfoBarAction(package, action));
+
+                if (activeInfoBar.TryShow())
+                {
+                    EnvTabsLog.Info("Update prompt shown via InfoBar.");
+                    StageDownloadInBackground(release);
+                }
+                else
+                {
+                    EnvTabsLog.Info("InfoBar unavailable, falling back to dialog.");
+                    activeInfoBar = null;
+                    ShowUpdatePromptDialog(package, release, latestDisplay, currentDisplay);
+                }
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Update prompt failed: {ex.Message}");
+            }
+        }
+
+        private static void HandleInfoBarAction(AsyncPackage package, string action)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            switch (action)
+            {
+                case "update_now":
+                    if (!string.IsNullOrWhiteSpace(stagedVsixPath) && File.Exists(stagedVsixPath))
+                    {
+                        LaunchVsixInstaller(stagedVsixPath);
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info("Staged VSIX not ready; opening release page.");
+                        SetLastUpdateResult("Update package not yet downloaded; opened release page.");
+                        OpenUrl(stagedRelease?.HtmlUrl);
+                    }
+                    break;
+
+                case "update_on_close":
+                    if (!string.IsNullOrWhiteSpace(stagedVsixPath) && File.Exists(stagedVsixPath))
+                    {
+                        pendingUpdateOnClose = true;
+                        SetLastUpdateResult("Update will install when SSMS closes.");
+                        activeInfoBar = null;
+                        EnvTabsLog.Info("Deferred update on close enabled.");
+                    }
+                    else
+                    {
+                        EnvTabsLog.Info("Staged VSIX not ready for deferred install; opening release page.");
+                        SetLastUpdateResult("Update package not yet downloaded; opened release page.");
+                        OpenUrl(stagedRelease?.HtmlUrl);
+                    }
+                    break;
+            }
+        }
+
+        private static void ShowUpdatePromptDialog(AsyncPackage package, GitHubRelease release, string latestDisplay, string currentDisplay)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
                 using (var dialog = new UpdatePromptDialog(
                     latestDisplay,
                     currentDisplay,
@@ -280,13 +355,13 @@ namespace SSMS_EnvTabs
                     var result = dialog.ShowDialog();
                     if (result == System.Windows.Forms.DialogResult.Yes)
                     {
-                        InstallRelease(release, currentVersion);
+                        InstallRelease(release);
                     }
                 }
             }
             catch (Exception ex)
             {
-                EnvTabsLog.Info($"Update prompt failed: {ex.Message}");
+                EnvTabsLog.Info($"Update prompt dialog failed: {ex.Message}");
             }
         }
 
@@ -328,7 +403,7 @@ namespace SSMS_EnvTabs
         }
 
 
-        private static void InstallRelease(GitHubRelease release, Version currentVersion)
+        private static void InstallRelease(GitHubRelease release)
         {
             if (release == null)
             {
@@ -371,7 +446,7 @@ namespace SSMS_EnvTabs
                     EnvTabsLog.Info("Update package checksum verified successfully.");
                     SetLastUpdateResult("Update package verified. Launching installer.");
 
-                    if (!LaunchUpdateScript(tempPath, release, currentVersion))
+                    if (!LaunchVsixInstaller(tempPath))
                     {
                         SetLastUpdateResult("Could not launch installer automatically; opened release page instead.");
                         OpenUrl(release.HtmlUrl);
@@ -384,6 +459,107 @@ namespace SSMS_EnvTabs
                     OpenUrl(release.HtmlUrl);
                 }
             });
+        }
+
+        private static void StageDownloadInBackground(GitHubRelease release)
+        {
+            if (release == null)
+            {
+                return;
+            }
+
+            stagedRelease = release;
+
+            GitHubAsset vsixAsset = GetVsixAsset(release);
+            if (vsixAsset == null || string.IsNullOrWhiteSpace(vsixAsset.DownloadUrl))
+            {
+                EnvTabsLog.Info("Stage download skipped: no VSIX asset found.");
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    SetLastUpdateResult("Downloading update package in background.");
+                    string expectedSha256 = await GetExpectedSha256Async(release, vsixAsset);
+                    if (string.IsNullOrWhiteSpace(expectedSha256))
+                    {
+                        EnvTabsLog.Info("Stage download aborted: .sha256 asset missing or invalid.");
+                        SetLastUpdateResult("Update download failed: missing or invalid .sha256 release asset.");
+                        return;
+                    }
+
+                    string tempPath = Path.Combine(Path.GetTempPath(), $"SSMS-EnvTabs-{Guid.NewGuid():N}.vsix");
+                    await DownloadFileAsync(vsixAsset.DownloadUrl, tempPath);
+
+                    string actualSha256 = ComputeSha256Hex(tempPath);
+                    if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnvTabsLog.Info($"Stage download aborted: checksum mismatch. Expected={expectedSha256}, Actual={actualSha256}");
+                        SetLastUpdateResult("Update download failed: checksum verification failed.");
+                        return;
+                    }
+
+                    stagedVsixPath = tempPath;
+                    EnvTabsLog.Info($"Update package staged at: {tempPath}");
+                    SetLastUpdateResult("Update package downloaded and verified. Ready to install.");
+                }
+                catch (Exception ex)
+                {
+                    EnvTabsLog.Info($"Stage download failed: {ex.Message}");
+                    SetLastUpdateResult($"Update download failed: {ex.Message}");
+                }
+            });
+        }
+
+        private static bool LaunchVsixInstaller(string vsixPath)
+        {
+            try
+            {
+                string installerPath = GetVsixInstallerPath();
+                if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
+                {
+                    EnvTabsLog.Info("VSIXInstaller.exe not found; falling back to browser.");
+                    return false;
+                }
+
+                var info = new ProcessStartInfo
+                {
+                    FileName = installerPath,
+                    Arguments = $"\"{vsixPath}\"",
+                    UseShellExecute = true
+                };
+
+                Process.Start(info);
+                EnvTabsLog.Info($"Launched VSIXInstaller: {installerPath} \"{vsixPath}\"");
+                SetLastUpdateResult("VSIXInstaller launched.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                EnvTabsLog.Info($"Launch VSIXInstaller failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        internal static void LaunchDeferredUpdateOnClose()
+        {
+            if (!pendingUpdateOnClose)
+            {
+                return;
+            }
+
+            pendingUpdateOnClose = false;
+
+            if (string.IsNullOrWhiteSpace(stagedVsixPath) || !File.Exists(stagedVsixPath))
+            {
+                EnvTabsLog.Info("Deferred update on close: staged VSIX not found. Skipping.");
+                return;
+            }
+
+            EnvTabsLog.Info("Deferred update on close: launching VSIXInstaller.");
+            LaunchVsixInstaller(stagedVsixPath);
         }
 
         private static GitHubAsset GetVsixAsset(GitHubRelease release)
@@ -547,118 +723,6 @@ namespace SSMS_EnvTabs
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("SSMS-EnvTabs");
                 var bytes = await client.GetByteArrayAsync(url);
                 File.WriteAllBytes(path, bytes);
-            }
-        }
-
-        private static bool LaunchUpdateScript(string vsixPath, GitHubRelease release, Version currentVersion)
-        {
-            try
-            {
-                string installerPath = GetVsixInstallerPath();
-                if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
-                {
-                    EnvTabsLog.Info("VSIXInstaller.exe not found; falling back to browser.");
-                    return false;
-                }
-
-                string scriptPath = Path.Combine(Path.GetTempPath(), $"SSMS-EnvTabs-Update-{Guid.NewGuid():N}.bat");
-                string releaseUrl = release?.HtmlUrl ?? string.Empty;
-                string releaseTag = release?.TagName ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(releaseTag) && releaseTag.StartsWith("v", StringComparison.OrdinalIgnoreCase))
-                {
-                    releaseTag = releaseTag.Substring(1);
-                }
-                var releaseParsed = ParseVersion(releaseTag);
-                if (releaseParsed != null)
-                {
-                    releaseTag = FormatVersion(releaseParsed);
-                }
-                if (string.IsNullOrWhiteSpace(releaseTag))
-                {
-                    releaseTag = "(new version)";
-                }
-                string currentTag = FormatVersion(currentVersion);
-                string uninstallLabel = $"Uninstalling v{currentTag}...";
-                string uninstallDone = $"Uninstalling v{currentTag}... done!";
-                string installLabel = $"Installing v{releaseTag}...";
-                string installDone = $"Installing v{releaseTag}... done!";
-
-                string uninstallPs =
-                    "$spinner='|/-\\';$i=0;[Console]::CursorVisible=$false;" +
-                    "Write-Host \"" + uninstallLabel + "\";" +
-                    "$line=[Console]::CursorTop-1;" +
-                    "while(Get-Process VSIXInstaller -ErrorAction SilentlyContinue){" +
-                    "$ch=$spinner[$i++%4];" +
-                    "[Console]::SetCursorPosition(0,$line);" +
-                    "Write-Host -NoNewline (\"" + uninstallLabel + " \"+$ch+\"   \" );" +
-                    "[Console]::SetCursorPosition(0,$line+1);" +
-                    "Start-Sleep -Milliseconds 250};" +
-                    "[Console]::SetCursorPosition(0,$line);" +
-                    "Write-Host \"" + uninstallDone + "   \";" +
-                    "[Console]::SetCursorPosition(0,$line+1);" +
-                    "[Console]::CursorVisible=$true";
-
-                string installPs =
-                    "$spinner='|/-\\';$i=0;[Console]::CursorVisible=$false;" +
-                    "Write-Host \"" + installLabel + "\";" +
-                    "$line=[Console]::CursorTop-1;" +
-                    "while(Get-Process VSIXInstaller -ErrorAction SilentlyContinue){" +
-                    "$ch=$spinner[$i++%4];" +
-                    "[Console]::SetCursorPosition(0,$line);" +
-                    "Write-Host -NoNewline (\"" + installLabel + " \"+$ch+\"   \" );" +
-                    "[Console]::SetCursorPosition(0,$line+1);" +
-                    "Start-Sleep -Milliseconds 250};" +
-                    "[Console]::SetCursorPosition(0,$line);" +
-                    "Write-Host \"" + installDone + "   \";" +
-                    "[Console]::SetCursorPosition(0,$line+1);" +
-                    "[Console]::CursorVisible=$true";
-
-                string uninstallPsEncoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(uninstallPs));
-                string installPsEncoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(installPs));
-                string script =
-                    "@echo off" + Environment.NewLine +
-                    "setlocal EnableExtensions EnableDelayedExpansion" + Environment.NewLine +
-                    "set installer=\"" + installerPath + "\"" + Environment.NewLine +
-                    "set vsix=\"" + vsixPath + "\"" + Environment.NewLine +
-                    "if not exist %installer% goto fallback" + Environment.NewLine +
-                    "echo ===Updating SSMS EnvTabs===" + Environment.NewLine +
-                    "echo This will take around 1 minute..." + Environment.NewLine +
-                    "taskkill /IM Ssms.exe /F >nul 2>&1" + Environment.NewLine +
-                    "timeout /t 2 /nobreak >nul" + Environment.NewLine +
-                    "echo." + Environment.NewLine +
-                    "start \"\" %installer% /quiet /uninstall:" + VsixId + Environment.NewLine +
-                    "start \"\" %installer% /quiet /uninstall:" + LegacyVsixId + Environment.NewLine +
-                    "powershell -NoProfile -EncodedCommand " + uninstallPsEncoded + Environment.NewLine +
-                    "start \"\" %installer% /quiet %vsix%" + Environment.NewLine +
-                    "powershell -NoProfile -EncodedCommand " + installPsEncoded + Environment.NewLine +
-                    "echo." + Environment.NewLine +
-                    "echo Update complete!" + Environment.NewLine +
-                    "echo You can launch SSMS now" + Environment.NewLine +
-                    "pause" + Environment.NewLine +
-                    "goto done" + Environment.NewLine +
-                    ":fallback" + Environment.NewLine +
-                    (string.IsNullOrWhiteSpace(releaseUrl) ? string.Empty : "start \"\" \"" + releaseUrl + "\"" + Environment.NewLine) +
-                    ":done" + Environment.NewLine +
-                    "endlocal" + Environment.NewLine +
-                    "del \"%~f0\"" + Environment.NewLine;
-
-                File.WriteAllText(scriptPath, script, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-                var info = new ProcessStartInfo
-                {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c \"\"{scriptPath}\"\"",
-                    UseShellExecute = true,
-                    CreateNoWindow = false
-                };
-
-                Process.Start(info);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                EnvTabsLog.Info($"Launch update script failed: {ex.Message}");
-                return false;
             }
         }
 

@@ -63,5 +63,15 @@ namespace SSMS_EnvTabs
             UpdateChecker.ScheduleCheck(this, initialConfig?.Settings);
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                UpdateChecker.LaunchDeferredUpdateOnClose();
+            }
+
+            base.Dispose(disposing);
+        }
+
     }
 }

@@ -80,6 +80,7 @@
     <Compile Include="TabRenamer.cs" />
     <Compile Include="TabRuleMatcher.cs" />
     <Compile Include="UpdateChecker.cs" />
+    <Compile Include="UpdateInfoBar.cs" />
     <Compile Include="UpdatePromptDialog.cs">
       <SubType>Form</SubType>
     </Compile>
