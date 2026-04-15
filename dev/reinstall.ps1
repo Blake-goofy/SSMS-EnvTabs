@@ -15,7 +15,6 @@ $installer = "C:\Program Files\Microsoft SQL Server Management Studio 22\Release
 $vsix = Join-Path $repoRoot "SSMS EnvTabs\bin\$Configuration\SSMS EnvTabs.vsix"
 $vsixLogDir = Join-Path $env:TEMP "SSMS_EnvTabs_logs"
 $id = "SSMS_EnvTabs"
-$legacyId = "SSMS_EnvTabs.20d4f774-2a12-403b-a25d-1ce263e878d7"
 $ssms = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\SSMS.lnk"
 
 if (-not (Test-Path $vsixLogDir)) {
@@ -159,11 +158,9 @@ if (-not (Test-Path $vsix)) {
 
 # 3) Uninstall currently installed extension versions.
 $uninstallCurrentLog = Join-Path $vsixLogDir "vsix-uninstall-current.log"
-$uninstallLegacyLog = Join-Path $vsixLogDir "vsix-uninstall-legacy.log"
 $uninstallCurrent = Start-Process -FilePath $installer -ArgumentList @("/quiet", "/uninstall:$id", "/logFile:$uninstallCurrentLog") -PassThru
-$uninstallLegacy = Start-Process -FilePath $installer -ArgumentList @("/quiet", "/uninstall:$legacyId", "/logFile:$uninstallLegacyLog") -PassThru
 Show-SpinnerForProcesses `
-    -Processes @($uninstallCurrent, $uninstallLegacy) `
+    -Processes @($uninstallCurrent) `
     -Label "Uninstalling..." `
     -DoneLabel "Uninstalling... done!" `
     -FailedLabel "Uninstalling... failed!" `
