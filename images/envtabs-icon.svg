@@ -1,0 +1,25 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Window background -->
+  <rect x="4" y="4" width="88" height="88" rx="14" fill="#1C2B3A"/>
+
+  <!-- Tab bar background -->
+  <rect x="4" y="4" width="88" height="30" rx="14" fill="#243344"/>
+  <rect x="4" y="20" width="88" height="14" fill="#243344"/>
+
+  <!-- 4 colored tabs: equal width (19px), height (10px), 2px gap -->
+  <rect x="7"  y="15" width="19" height="10" rx="3" fill="#9083EF"/>
+  <rect x="28" y="15" width="19" height="10" rx="3" fill="#D0B132"/>
+  <rect x="49" y="15" width="19" height="10" rx="3" fill="#30B1CD"/>
+  <rect x="70" y="15" width="19" height="10" rx="3" fill="#CF6468"/>
+
+  <!-- Divider between tab bar and content -->
+  <rect x="4" y="30" width="88" height="2" fill="#1C2B3A"/>
+
+  <!-- Content area: neutral query-text lines -->
+  <rect x="12" y="40" width="40" height="5" rx="2.5" fill="#2E4A64"/>
+  <rect x="12" y="52" width="64" height="5" rx="2.5" fill="#253A50"/>
+  <rect x="12" y="64" width="50" height="5" rx="2.5" fill="#253A50"/>
+  <rect x="12" y="76" width="30" height="5" rx="2.5" fill="#253A50"/>
+
+</svg>
