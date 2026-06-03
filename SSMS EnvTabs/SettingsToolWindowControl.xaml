@@ -667,10 +667,14 @@
                                         <Button x:Name="NewQueryRenameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
                                     </StackPanel>
                                 </Grid>
-                                <StackPanel x:Name="NewQueryRenameTokenPanel" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
+                                <WrapPanel x:Name="NewQueryRenameTokenPanel" Margin="0,8,0,0" Visibility="Collapsed">
+                                    <Button Content="[filename]" Tag="[filename]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Query file name" />
                                     <Button Content="[groupName]" Tag="[groupName]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Matched connection group name" />
+                                    <Button Content="[server]" Tag="[server]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Server name" />
+                                    <Button Content="[serverAlias]" Tag="[serverAlias]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Configured server alias" />
+                                    <Button Content="[db]" Tag="[db]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Database name" />
                                     <Button Content="[#]" Tag="[#]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Per-group query index" />
-                                </StackPanel>
+                                </WrapPanel>
                                 <TextBlock x:Name="NewQueryRenameTokenHelpText"
                                            Style="{StaticResource OptionDescriptionStyle}"
                                            Text="Use the token buttons above to insert text in the field."
@@ -695,13 +699,14 @@
                                         <Button x:Name="SavedFileRenameCancelButton" Content="Cancel" Style="{StaticResource StyleEditButtonStyle}" Click="StyleCancelButton_Click" Visibility="Collapsed" Margin="8,0,0,0" />
                                     </StackPanel>
                                 </Grid>
-                                <StackPanel x:Name="SavedFileRenameTokenPanel" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
+                                <WrapPanel x:Name="SavedFileRenameTokenPanel" Margin="0,8,0,0" Visibility="Collapsed">
                                     <Button Content="[filename]" Tag="[filename]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Saved file name" />
                                     <Button Content="[groupName]" Tag="[groupName]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Matched connection group name" />
                                     <Button Content="[server]" Tag="[server]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Server name" />
                                     <Button Content="[serverAlias]" Tag="[serverAlias]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Configured server alias" />
                                     <Button Content="[db]" Tag="[db]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Database name" />
-                                </StackPanel>
+                                    <Button Content="[#]" Tag="[#]" Style="{StaticResource TokenButtonStyle}" Click="TokenButton_Click" ToolTip="Per-group query index" />
+                                </WrapPanel>
                                 <TextBlock x:Name="SavedFileRenameTokenHelpText"
                                            Style="{StaticResource OptionDescriptionStyle}"
                                            Text="Use the token buttons above to insert text in the field."

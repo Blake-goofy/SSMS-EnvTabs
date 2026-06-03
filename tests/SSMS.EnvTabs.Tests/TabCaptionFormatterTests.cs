@@ -123,5 +123,53 @@ namespace SSMS_EnvTabs.Tests
 
             Assert.AreEqual("PROD-01", result);
         }
+
+        [TestMethod]
+        public void BuildStyleCaption_ReplacesAllTokensForNewQueryStyle()
+        {
+            string style = "[serverAlias] - [db] - [filename] - [groupName] - [#]";
+            string result = TabCaptionFormatter.BuildStyleCaption(
+                style,
+                "SQLQuery1",
+                "Prod",
+                "ProdServer01",
+                "ProdAlias",
+                "SalesDb",
+                2);
+
+            Assert.AreEqual("ProdAlias - SalesDb - SQLQuery1 - Prod - 2", result);
+        }
+
+        [TestMethod]
+        public void BuildStyleCaption_ReplacesIndexTokenInSavedFileStyle()
+        {
+            string result = TabCaptionFormatter.BuildStyleCaption("[filename] [#]", "daily_report", "Prod", "Srv", null, "Db", 3);
+
+            Assert.AreEqual("daily_report 3", result);
+        }
+
+        [TestMethod]
+        public void BuildStyleCaption_NullIndexRemovesIndexToken()
+        {
+            string result = TabCaptionFormatter.BuildStyleCaption("[filename] [#]", "daily_report", "Prod", "Srv", null, "Db", null);
+
+            Assert.AreEqual("daily_report ", result);
+        }
+
+        [TestMethod]
+        public void GetFilenameToken_RemovesSqlExtensionWhenEnabled()
+        {
+            string result = TabCaptionFormatter.GetFilenameToken(@"C:\Queries\daily_report.sql", enableRemoveDotSql: true);
+
+            Assert.AreEqual("daily_report", result);
+        }
+
+        [TestMethod]
+        public void GetFilenameToken_PreservesSqlExtensionWhenDisabled()
+        {
+            string result = TabCaptionFormatter.GetFilenameToken(@"C:\Queries\daily_report.sql", enableRemoveDotSql: false);
+
+            Assert.AreEqual("daily_report.sql", result);
+        }
     }
 }

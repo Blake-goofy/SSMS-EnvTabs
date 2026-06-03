@@ -62,14 +62,32 @@ namespace SSMS_EnvTabs
             return Regex.Replace(name, @"\.sql$", string.Empty, RegexOptions.IgnoreCase);
         }
 
+        internal static string GetFilenameToken(string moniker, bool enableRemoveDotSql)
+        {
+            if (string.IsNullOrWhiteSpace(moniker))
+            {
+                return string.Empty;
+            }
+
+            return enableRemoveDotSql
+                ? System.IO.Path.GetFileNameWithoutExtension(moniker)
+                : System.IO.Path.GetFileName(moniker);
+        }
+
         internal static string BuildSavedStyleCaption(string savedStyle, string filenameToken, string groupName, string server, string serverAlias, string database)
         {
-            return (savedStyle ?? string.Empty)
+            return BuildStyleCaption(savedStyle, filenameToken, groupName, server, serverAlias, database, null);
+        }
+
+        internal static string BuildStyleCaption(string style, string filenameToken, string groupName, string server, string serverAlias, string database, int? index)
+        {
+            return (style ?? string.Empty)
                 .Replace("[filename]", filenameToken ?? string.Empty)
                 .Replace("[groupName]", groupName ?? string.Empty)
                 .Replace("[server]", server ?? string.Empty)
                 .Replace("[serverAlias]", serverAlias ?? server ?? string.Empty)
-                .Replace("[db]", database ?? string.Empty);
+                .Replace("[db]", database ?? string.Empty)
+                .Replace("[#]", index?.ToString() ?? string.Empty);
         }
     }
 }

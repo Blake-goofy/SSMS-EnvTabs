@@ -57,8 +57,8 @@ namespace SSMS_EnvTabs
         private Button savedFileRenameSaveButton;
         private Button savedFileRenameCancelButton;
         private StackPanel suggestedGroupNameTokenPanel;
-        private StackPanel newQueryRenameTokenPanel;
-        private StackPanel savedFileRenameTokenPanel;
+        private Panel newQueryRenameTokenPanel;
+        private Panel savedFileRenameTokenPanel;
         private TextBlock suggestedGroupNameTokenHelpText;
         private TextBlock newQueryRenameTokenHelpText;
         private TextBlock savedFileRenameTokenHelpText;
@@ -231,8 +231,8 @@ namespace SSMS_EnvTabs
             savedFileRenameSaveButton = FindRequiredControl<Button>("SavedFileRenameSaveButton");
             savedFileRenameCancelButton = FindRequiredControl<Button>("SavedFileRenameCancelButton");
             suggestedGroupNameTokenPanel = FindRequiredControl<StackPanel>("SuggestedGroupNameTokenPanel");
-            newQueryRenameTokenPanel = FindRequiredControl<StackPanel>("NewQueryRenameTokenPanel");
-            savedFileRenameTokenPanel = FindRequiredControl<StackPanel>("SavedFileRenameTokenPanel");
+            newQueryRenameTokenPanel = FindRequiredControl<Panel>("NewQueryRenameTokenPanel");
+            savedFileRenameTokenPanel = FindRequiredControl<Panel>("SavedFileRenameTokenPanel");
             suggestedGroupNameTokenHelpText = FindRequiredControl<TextBlock>("SuggestedGroupNameTokenHelpText");
             newQueryRenameTokenHelpText = FindRequiredControl<TextBlock>("NewQueryRenameTokenHelpText");
             savedFileRenameTokenHelpText = FindRequiredControl<TextBlock>("SavedFileRenameTokenHelpText");
@@ -1239,7 +1239,7 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private StackPanel GetTokenPanel(EditableStyleField field)
+        private Panel GetTokenPanel(EditableStyleField field)
         {
             switch (field)
             {
@@ -1285,7 +1285,7 @@ namespace SSMS_EnvTabs
             Button editButton = GetEditButton(field);
             Button saveButton = GetSaveButton(field);
             Button cancelButton = GetCancelButton(field);
-            StackPanel tokenPanel = GetTokenPanel(field);
+            Panel tokenPanel = GetTokenPanel(field);
             TextBlock tokenHelpText = GetTokenHelpText(field);
 
             if (textBox != null)

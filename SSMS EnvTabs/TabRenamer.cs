@@ -34,6 +34,10 @@ namespace SSMS_EnvTabs
         // the group suffix to be appended repeatedly).
         private static readonly Dictionary<uint, string> CookieToOriginalPureName =
             new Dictionary<uint, string>();
+        // Tracks captions set by EnvTabs so live style changes do not make the old generated caption
+        // look like a new user-provided name.
+        private static readonly Dictionary<uint, string> CookieToLastAppliedCaption =
+            new Dictionary<uint, string>();
 
         // Matches SSMS's built-in sequential caption for new unsaved queries, e.g. "SQLQuery1".
         // After .sql is stripped this is the only form we need to match.
@@ -47,6 +51,7 @@ namespace SSMS_EnvTabs
             CookieToSsmsSuffix.Remove(cookie);
             OriginalCaptionByCookie.Remove(cookie);
             CookieToOriginalPureName.Remove(cookie);
+            CookieToLastAppliedCaption.Remove(cookie);
         }
 
         /// <summary>
@@ -67,6 +72,7 @@ namespace SSMS_EnvTabs
             OriginalCaptionByCookie.TryGetValue(cookie, out string originalCaption);
             OriginalCaptionByCookie.Remove(cookie);
             CookieToOriginalPureName.Remove(cookie);
+            CookieToLastAppliedCaption.Remove(cookie);
 
             if (frame == null || string.IsNullOrWhiteSpace(originalCaption))
             {
@@ -177,19 +183,21 @@ namespace SSMS_EnvTabs
                 {
                     CookieToSsmsSuffix.TryGetValue(tab.Cookie, out string ssmsSuffix);
                     string pureName = GetPureName(tab.FrameCaption, ssmsSuffix, enableRemoveDotSql);
-
-                    string generatedDefault = renameStyle
-                        .Replace("[groupName]", assignment.GroupName)
-                        .Replace("[#]", assignment.Index.ToString());
+                    string defaultFilenameToken = GetDefaultTempFilenameToken(tab, ssmsSuffix, enableRemoveDotSql);
+                    string generatedDefault = BuildStyleCaption(renameStyle, defaultFilenameToken, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database, assignment.Index);
 
                     // When SSMS caption options (server/DB suffix) are disabled, the caption is just
                     // the raw temp filename (e.g. "5tekxtn0") instead of "SQLQuery1". Treat that as
                     // a default name too, so we don't mistake it for a user-customised caption.
                     string monikerBase = System.IO.Path.GetFileNameWithoutExtension(tab.Moniker ?? "");
+                    bool isExtensionGeneratedCaption = CookieToLastAppliedCaption.TryGetValue(tab.Cookie, out string lastAppliedCaption)
+                        && (string.Equals(tab.FrameCaption, lastAppliedCaption, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(pureName, GetPureName(lastAppliedCaption, ssmsSuffix, enableRemoveDotSql), StringComparison.OrdinalIgnoreCase));
                     bool isDefault = string.IsNullOrWhiteSpace(pureName)
                         || SsmsDefaultQueryCaptionRegex.IsMatch(pureName)
                         || string.Equals(pureName, generatedDefault, StringComparison.OrdinalIgnoreCase)
-                        || (!string.IsNullOrEmpty(monikerBase) && string.Equals(pureName, monikerBase, StringComparison.OrdinalIgnoreCase));
+                        || (!string.IsNullOrEmpty(monikerBase) && string.Equals(pureName, monikerBase, StringComparison.OrdinalIgnoreCase))
+                        || isExtensionGeneratedCaption;
 
                     if (!isDefault)
                     {
@@ -228,8 +236,8 @@ namespace SSMS_EnvTabs
                 {
                     // Case 2: Saved File -> Use Saved File Configured Style
                     // Replace [filename], [groupName], [server], [serverAlias], [db]
-                    string fileName = System.IO.Path.GetFileNameWithoutExtension(tab.Moniker);
-                    newCaption = BuildSavedStyleCaption(effectiveSavedStyle, fileName, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database);
+                    string fileName = GetSavedFilenameToken(tab.Moniker, enableRemoveDotSql);
+                    newCaption = BuildStyleCaption(effectiveSavedStyle, fileName, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database, assignment.Index);
                 }
                 
                 // Skip if the visible name (SSMS suffix stripped) already matches what we'd set.
@@ -246,6 +254,7 @@ namespace SSMS_EnvTabs
                 if (ErrorHandler.Succeeded(hr))
                 {
                     renamed++;
+                    CookieToLastAppliedCaption[tab.Cookie] = newCaption;
                     EnvTabsLog.Info($"Renamed ({propertyNameUsed}): cookie={tab.Cookie}, '{tab.FrameCaption}' -> '{newCaption}'");
                 }
                 else
@@ -311,6 +320,41 @@ namespace SSMS_EnvTabs
             return TabCaptionFormatter.BuildSavedStyleCaption(savedStyle, filenameToken, groupName, server, serverAlias, database);
         }
 
+        private static string BuildStyleCaption(string style, string filenameToken, string groupName, string server, string serverAlias, string database, int? index)
+        {
+            return TabCaptionFormatter.BuildStyleCaption(style, filenameToken, groupName, server, serverAlias, database, index);
+        }
+
+        private static string GetDefaultTempFilenameToken(TabRenameContext tab, string ssmsSuffix, bool enableRemoveDotSql)
+        {
+            if (tab == null)
+            {
+                return string.Empty;
+            }
+
+            string originalCaption = null;
+            if (tab.Cookie != 0)
+            {
+                OriginalCaptionByCookie.TryGetValue(tab.Cookie, out originalCaption);
+            }
+
+            string filenameToken = GetPureName(
+                string.IsNullOrWhiteSpace(originalCaption) ? tab.FrameCaption : originalCaption,
+                ssmsSuffix,
+                enableRemoveDotSql);
+
+            if (!string.IsNullOrWhiteSpace(filenameToken))
+            {
+                return filenameToken;
+            }
+
+            return GetSavedFilenameToken(tab.Moniker, enableRemoveDotSql);
+        }
+
+        private static string GetSavedFilenameToken(string moniker, bool enableRemoveDotSql)
+        {
+            return TabCaptionFormatter.GetFilenameToken(moniker, enableRemoveDotSql);
+        }
 
         private static int TrySetTabCaption(IVsWindowFrame frame, string newCaption, out string propertyNameUsed)
         {
