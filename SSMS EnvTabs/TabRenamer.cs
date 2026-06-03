@@ -73,6 +73,7 @@ namespace SSMS_EnvTabs
             OriginalCaptionByCookie.Remove(cookie);
             CookieToOriginalPureName.Remove(cookie);
             CookieToLastAppliedCaption.Remove(cookie);
+            originalCaption = StripDirtyIndicators(originalCaption);
 
             if (frame == null || string.IsNullOrWhiteSpace(originalCaption))
             {
@@ -159,7 +160,7 @@ namespace SSMS_EnvTabs
                     // so we can restore it if the rule is later cancelled or removed.
                     if (!CookieToAssignment.ContainsKey(tab.Cookie) && !OriginalCaptionByCookie.ContainsKey(tab.Cookie))
                     {
-                        OriginalCaptionByCookie[tab.Cookie] = tab.FrameCaption;
+                        OriginalCaptionByCookie[tab.Cookie] = StripDirtyIndicators(tab.FrameCaption);
                         CookieToSsmsSuffix[tab.Cookie] = DetectSsmsSuffix(tab.FrameCaption, tab.Moniker);
                     }
 

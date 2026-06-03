@@ -71,6 +71,24 @@ namespace SSMS_EnvTabs.Tests
         }
 
         [TestMethod]
+        public void StripDirtyIndicators_RemovesRepeatedCircleMarkers()
+        {
+            Assert.AreEqual("xidjdmdj..sql", TabCaptionFormatter.StripDirtyIndicators("xidjdmdj..sql \u2B24 \u2B24"));
+        }
+
+        [TestMethod]
+        public void StripDirtyIndicators_RemovesRepeatedStarMarkers()
+        {
+            Assert.AreEqual("xidjdmdj..sql", TabCaptionFormatter.StripDirtyIndicators("xidjdmdj..sql**"));
+        }
+
+        [TestMethod]
+        public void StripDirtyIndicators_RemovesMixedDirtyMarkers()
+        {
+            Assert.AreEqual("xidjdmdj..sql", TabCaptionFormatter.StripDirtyIndicators("xidjdmdj..sql* \u2B24 *"));
+        }
+
+        [TestMethod]
         public void StripSqlExtension_CaseInsensitive()
         {
             Assert.AreEqual("file", TabCaptionFormatter.StripSqlExtension("file.SQL", true));
