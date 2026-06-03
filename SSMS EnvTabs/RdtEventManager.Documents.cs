@@ -6,17 +6,12 @@ using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace SSMS_EnvTabs
@@ -25,9 +20,6 @@ namespace SSMS_EnvTabs
     {
         private const string IndicatorTypeName = "Indicator";
         private const string IndicatorTypeFullName = "Microsoft.VisualStudio.Shell.Controls.Indicator";
-        private const string AdornmentLayerTypeName = "AdornmentLayer";
-        private const string AdornmentLayerTypeFullName = "Microsoft.VisualStudio.Text.Editor.Implementation.AdornmentLayer";
-        private const uint CommonControlSetBkColorMessage = 0x2001;
         private static readonly string[] PreferredTextViewMarginNames = new[]
         {
             "Glyph",
@@ -36,13 +28,8 @@ namespace SSMS_EnvTabs
             "Indicator",
             "SpacerMargin"
         };
-        private const string StatusBarLeftContainerName = "PART_StatusBarLeftFrameControlContainer";
-
-        private static readonly object statusBarProbeLock = new object();
-        private static readonly HashSet<string> loggedStatusBarProbeKeys = new HashSet<string>(StringComparer.Ordinal);
-        private static readonly HashSet<string> loggedStatusStripInventoryKeys = new HashSet<string>(StringComparer.Ordinal);
         private static readonly string[] IndicatorBrushPropertyNames = new[] { "Background", "BorderBrush", "Foreground", "Fill", "Stroke" };
-        private static readonly ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripSnapshot> originalStatusStripState = new ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripSnapshot>();
+        private static readonly ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController> statusStripColorControllers = new ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController>();
         private static readonly ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot> originalIndicatorBrushState = new ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot>();
 
         private IComponentModel componentModel;
@@ -133,328 +120,138 @@ namespace SSMS_EnvTabs
             bool statusBarEnabled = matchedRule?.EnableStatusBarColor ?? settings.InitialStatusBarColor;
             if (!statusBarEnabled)
             {
-                // Restore default status bar appearance if we previously colored it.
-                TryResetDocViewStatusBarColor(frame);
+                TrySetQueryEditorStatusBarColor(frame, null, out _);
                 return;
             }
 
             int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
             if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length)
             {
+                TrySetQueryEditorStatusBarColor(frame, null, out _);
                 return;
             }
 
-            if (TryApplyDocViewStatusBarColor(frame, colorIndex.Value, out string docViewTarget))
+            var color = System.Drawing.ColorTranslator.FromHtml(ColorPalette.Hex[colorIndex.Value]);
+            if (TrySetQueryEditorStatusBarColor(frame, color, out string docViewTarget))
             {
-                EnvTabsLog.Info($"StatusBarColor: applied cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value} mode=docview target='{docViewTarget}'");
+                EnvTabsLog.Info($"StatusBarColor: applied cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value} mode=statusbar-manager target='{docViewTarget}'");
                 return;
             }
 
             EnvTabsLog.Info($"StatusBarColor: target not found cookie={docCookie} server='{server}' db='{database}'");
         }
 
-        private bool TryApplyDocViewStatusBarColor(IVsWindowFrame frame, int colorIndex, out string targetDescription)
+        private static bool TrySetQueryEditorStatusBarColor(IVsWindowFrame frame, System.Drawing.Color? color, out string targetDescription)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
             targetDescription = null;
-            if (frame == null || colorIndex < 0 || colorIndex >= ColorPalette.Hex.Length)
-            {
-                return false;
-            }
-
-            if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView) != VSConstants.S_OK || docView == null)
-            {
-                return false;
-            }
-
-            if ((TryGetReflectionMemberValue(docView, "statusBar", out object statusBarObject)
-                    || TryGetReflectionMemberValue(docView, "StatusBar", out statusBarObject))
-                && statusBarObject is System.Windows.Forms.StatusStrip statusStrip
-                && TryApplyWinFormsStatusStripColor(statusStrip, colorIndex, out string textColorName))
-            {
-                targetDescription = "DocView.statusBar; control=" + statusStrip.GetType().FullName + "; text=" + textColorName;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void TryResetDocViewStatusBarColor(IVsWindowFrame frame)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
             if (frame == null)
             {
-                return;
+                return false;
             }
 
             if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView) != VSConstants.S_OK || docView == null)
             {
-                return;
+                return false;
             }
 
-            if ((TryGetReflectionMemberValue(docView, "statusBar", out object statusBarObject)
-                    || TryGetReflectionMemberValue(docView, "StatusBar", out statusBarObject))
-                && statusBarObject is System.Windows.Forms.StatusStrip statusStrip)
-            {
-                TryResetWinFormsStatusStrip(statusStrip);
-            }
-        }
-
-        private static void TryResetWinFormsStatusStrip(System.Windows.Forms.StatusStrip statusStrip)
-        {
-            if (statusStrip == null || statusStrip.IsDisposed)
-            {
-                return;
-            }
-
-            if (!originalStatusStripState.TryGetValue(statusStrip, out StatusStripSnapshot snapshot))
-            {
-                // No snapshot means we never painted this strip — nothing to restore.
-                return;
-            }
-
-            statusStrip.SuspendLayout();
-            try
-            {
-                RestoreStatusStripRenderer(statusStrip, snapshot);
-                statusStrip.BackColor = snapshot.BackColor;
-                statusStrip.ForeColor = snapshot.ForeColor;
-
-                foreach (StatusStripItemSnapshot itemSnapshot in snapshot.ItemSnapshots)
-                {
-                    if (itemSnapshot.Item == null || itemSnapshot.Item.IsDisposed)
-                    {
-                        continue;
-                    }
-
-                    itemSnapshot.Item.BackColor = itemSnapshot.BackColor;
-                    itemSnapshot.Item.ForeColor = itemSnapshot.ForeColor;
-                }
-            }
-            finally
-            {
-                statusStrip.ResumeLayout(true);
-            }
-
-            // Remove snapshot so a future paint will re-capture the (now restored) state.
-            originalStatusStripState.Remove(statusStrip);
-
-            statusStrip.Invalidate(true);
-            statusStrip.Refresh();
-        }
-
-        private static void RestoreStatusStripRenderer(System.Windows.Forms.StatusStrip statusStrip, StatusStripSnapshot snapshot)
-        {
-            if (snapshot.RenderMode == System.Windows.Forms.ToolStripRenderMode.Custom)
-            {
-                if (snapshot.Renderer != null)
-                {
-                    statusStrip.Renderer = snapshot.Renderer;
-                }
-
-                return;
-            }
-
-            statusStrip.Renderer = null;
-            statusStrip.RenderMode = snapshot.RenderMode;
-        }
-
-        private static bool TryApplyWinFormsStatusStripColor(System.Windows.Forms.StatusStrip statusStrip, int colorIndex, out string textColorName)
-        {
-            textColorName = null;
-            if (statusStrip == null || statusStrip.IsDisposed || colorIndex < 0 || colorIndex >= ColorPalette.Hex.Length)
+            if (!TryGetReflectionMemberValue(docView, "StatusBarManager", out object statusBarManager)
+                && !TryGetReflectionMemberValue(docView, "m_statusBarManager", out statusBarManager)
+                && !TryGetReflectionMemberValue(docView, "statusBarManager", out statusBarManager))
             {
                 return false;
             }
 
-            var backColor = System.Drawing.ColorTranslator.FromHtml(ColorPalette.Hex[colorIndex]);
-            var foreColor = GetReadableStatusTextColor(backColor);
-            var renderer = new SolidStatusStripRenderer(backColor, foreColor);
-            textColorName = IsNearBlack(foreColor) ? "black" : "white";
+            System.Drawing.Color targetColor = color ?? System.Drawing.SystemColors.Control;
+            bool nativeApplied = TrySetNativeServerBackground(statusBarManager, targetColor);
+            bool stripApplied = false;
 
-            LogStatusStripItemsOnce(statusStrip);
-
-            // Snapshot original state before first paint so we can restore later.
-            if (!originalStatusStripState.TryGetValue(statusStrip, out _))
+            if (TryGetStatusStrip(statusBarManager, out System.Windows.Forms.StatusStrip statusStrip))
             {
-                originalStatusStripState.GetOrCreateValue(statusStrip).CaptureFrom(statusStrip);
+                var controller = GetStatusStripColorController(statusStrip);
+                if (color.HasValue)
+                {
+                    controller.ApplyColor(color.Value);
+                }
+                else
+                {
+                    controller.Restore();
+                    statusStripColorControllers.Remove(statusStrip);
+                }
+
+                stripApplied = true;
             }
 
-            statusStrip.SuspendLayout();
-            try
+            if (!nativeApplied && !stripApplied)
             {
-                statusStrip.RenderMode = System.Windows.Forms.ToolStripRenderMode.Professional;
-                statusStrip.Renderer = renderer;
-                statusStrip.BackColor = backColor;
-                statusStrip.ForeColor = foreColor;
-
-                ApplyStatusStripItemColors(statusStrip.Items, backColor, foreColor);
-            }
-            finally
-            {
-                statusStrip.ResumeLayout(true);
+                return false;
             }
 
-            statusStrip.Invalidate(true);
-            statusStrip.Refresh();
+            targetDescription = "DocView.StatusBarManager; nativeSetServerBackground=" + nativeApplied
+                + "; statusStrip=" + (stripApplied ? statusStrip.GetType().FullName : "<not-found>");
             return true;
         }
 
-        private static void ApplyStatusStripItemColors(System.Windows.Forms.ToolStripItemCollection items, System.Drawing.Color backColor, System.Drawing.Color foreColor)
+        private static bool TrySetNativeServerBackground(object statusBarManager, System.Drawing.Color color)
         {
-            if (items == null)
-            {
-                return;
-            }
-
-            foreach (System.Windows.Forms.ToolStripItem item in items)
-            {
-                item.BackColor = backColor;
-
-                if (ShouldOverrideStatusStripItemTextColor(item))
-                {
-                    item.ForeColor = foreColor;
-                }
-
-                if (item is System.Windows.Forms.ToolStripDropDownItem dropDownItem)
-                {
-                    ApplyStatusStripItemColors(dropDownItem.DropDownItems, backColor, foreColor);
-                }
-            }
-        }
-
-        private static bool ShouldOverrideStatusStripItemTextColor(System.Windows.Forms.ToolStripItem item)
-        {
-            return !IsSubtleStatusStripSeparator(item);
-        }
-
-        private static bool IsSubtleStatusStripSeparator(System.Windows.Forms.ToolStripItem item)
-        {
-            if (item == null)
+            if (statusBarManager == null)
             {
                 return false;
             }
 
-            if (item is System.Windows.Forms.ToolStripSeparator)
+            try
             {
-                return true;
-            }
+                MethodInfo method = statusBarManager.GetType().GetMethod(
+                    "SetServerBackground",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(System.Drawing.Color) },
+                    null);
 
-            string probe = string.Join(" ", new[]
-            {
-                item.Name,
-                item.AccessibleName,
-                item.AccessibleDescription,
-                item.GetType().FullName
-            }.Where(value => !string.IsNullOrWhiteSpace(value))).ToLowerInvariant();
-
-            if (probe.Contains("separator"))
-            {
-                return true;
-            }
-
-            string text = (item.Text ?? string.Empty).Trim();
-            return text.Length == 1 && IsSeparatorGlyph(text[0]);
-        }
-
-        private static bool IsSeparatorGlyph(char value)
-        {
-            switch (value)
-            {
-                case '|':
-                case '\u00A6':
-                case '\u2502':
-                case '\u2503':
-                case '\u2506':
-                case '\u250A':
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        private static void LogStatusStripItemsOnce(System.Windows.Forms.StatusStrip statusStrip)
-        {
-            if (statusStrip == null)
-            {
-                return;
-            }
-
-            string key = (statusStrip.GetType().FullName ?? statusStrip.GetType().Name)
-                + "#"
-                + RuntimeHelpers.GetHashCode(statusStrip);
-
-            lock (statusBarProbeLock)
-            {
-                if (!loggedStatusStripInventoryKeys.Add(key))
+                if (method == null)
                 {
-                    return;
+                    return false;
                 }
+
+                method.Invoke(statusBarManager, new object[] { color });
+                return true;
             }
-
-            var items = (statusStrip.Items ?? new System.Windows.Forms.ToolStripItemCollection(statusStrip, null))
-                .Cast<System.Windows.Forms.ToolStripItem>()
-                .Select(DescribeStatusStripItemForLog)
-                .ToList();
-
-            EnvTabsLog.Info("StatusBarColor: item inventory -> " + (items.Count == 0 ? "(none)" : string.Join(" | ", items)));
-        }
-
-        private static string DescribeStatusStripItemForLog(System.Windows.Forms.ToolStripItem item)
-        {
-            if (item == null)
+            catch (Exception ex)
             {
-                return "<null>";
+                EnvTabsLog.Verbose($"StatusBarColor: native SetServerBackground failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool TryGetStatusStrip(object statusBarManager, out System.Windows.Forms.StatusStrip statusStrip)
+        {
+            statusStrip = null;
+
+            if (statusBarManager == null)
+            {
+                return false;
             }
 
-            string text = item.Text ?? string.Empty;
-            string codes = text.Length == 0
-                ? "none"
-                : string.Join(",", text.Select(ch => ((int)ch).ToString("X4")));
+            if (!TryGetReflectionMemberValue(statusBarManager, "statusStrip", out object statusStripObject)
+                && !TryGetReflectionMemberValue(statusBarManager, "StatusStrip", out statusStripObject))
+            {
+                return false;
+            }
 
-            return "type='" + (item.GetType().FullName ?? item.GetType().Name)
-                + "' name='" + (item.Name ?? string.Empty)
-                + "' text='" + text.Replace("'", "''")
-                + "' codes=[" + codes + "]"
-                + " preserveTextColor=" + IsSubtleStatusStripSeparator(item);
+            statusStrip = statusStripObject as System.Windows.Forms.StatusStrip;
+            return statusStrip != null && !statusStrip.IsDisposed;
         }
 
-        private static System.Drawing.Color GetReadableStatusTextColor(System.Drawing.Color backColor)
+        private static StatusStripColorController GetStatusStripColorController(System.Windows.Forms.StatusStrip statusStrip)
         {
-            double contrastWithBlack = GetContrastRatio(backColor, System.Drawing.Color.Black);
-            double contrastWithWhite = GetContrastRatio(backColor, System.Drawing.Color.White);
-            return contrastWithBlack >= contrastWithWhite ? System.Drawing.Color.Black : System.Drawing.Color.White;
-        }
+            if (!statusStripColorControllers.TryGetValue(statusStrip, out StatusStripColorController controller))
+            {
+                controller = new StatusStripColorController(statusStrip);
+                statusStripColorControllers.Add(statusStrip, controller);
+            }
 
-        private static double GetContrastRatio(System.Drawing.Color a, System.Drawing.Color b)
-        {
-            double luminanceA = GetRelativeLuminance(a);
-            double luminanceB = GetRelativeLuminance(b);
-            double lighter = Math.Max(luminanceA, luminanceB);
-            double darker = Math.Min(luminanceA, luminanceB);
-            return (lighter + 0.05) / (darker + 0.05);
-        }
-
-        private static double GetRelativeLuminance(System.Drawing.Color color)
-        {
-            double r = GetLinearChannel(color.R / 255.0);
-            double g = GetLinearChannel(color.G / 255.0);
-            double b = GetLinearChannel(color.B / 255.0);
-            return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
-        }
-
-        private static double GetLinearChannel(double channel)
-        {
-            return channel <= 0.03928
-                ? channel / 12.92
-                : Math.Pow((channel + 0.055) / 1.055, 2.4);
-        }
-
-        private static bool IsNearBlack(System.Drawing.Color color)
-        {
-            return color.R < 32 && color.G < 32 && color.B < 32;
+            return controller;
         }
 
         private static bool TryGetReflectionMemberValue(object source, string memberName, out object value)
@@ -501,70 +298,345 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static IEnumerable<object> EnumerateProbeObjectGraph(object root, int maxDepth, int maxNodes)
+        private sealed class StatusStripColorController
         {
-            if (root == null || maxDepth < 0 || maxNodes <= 0)
+            private readonly System.Windows.Forms.StatusStrip statusStrip;
+            private readonly Dictionary<System.Windows.Forms.ToolStripItem, ToolStripItemColorSnapshot> itemSnapshots = new Dictionary<System.Windows.Forms.ToolStripItem, ToolStripItemColorSnapshot>();
+            private System.Drawing.Color originalBackColor;
+            private System.Drawing.Color originalForeColor;
+            private bool hasSnapshot;
+            private bool isApplying;
+            private System.Drawing.Color? desiredColor;
+
+            public StatusStripColorController(System.Windows.Forms.StatusStrip statusStrip)
             {
-                yield break;
+                this.statusStrip = statusStrip;
+
+                if (statusStrip != null)
+                {
+                    statusStrip.BackColorChanged += OnBackColorChanged;
+                    statusStrip.ItemAdded += OnItemAdded;
+                    statusStrip.Paint += OnPaint;
+                    statusStrip.Disposed += OnDisposed;
+                }
             }
 
-            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            var queue = new Queue<(object Node, int Depth)>();
-            visited.Add(root);
-            queue.Enqueue((root, 0));
-
-            int visitedCount = 0;
-            while (queue.Count > 0 && visitedCount < maxNodes)
+            public void ApplyColor(System.Drawing.Color backColor)
             {
-                var current = queue.Dequeue();
-                visitedCount++;
-                yield return current.Node;
-
-                if (current.Depth >= maxDepth)
+                if (statusStrip == null || statusStrip.IsDisposed)
                 {
-                    continue;
+                    return;
                 }
 
-                foreach ((string _, object child) in EnumerateProbeMembers(current.Node))
+                CaptureSnapshotIfNeeded();
+                desiredColor = backColor;
+                ApplyDesiredColor();
+            }
+
+            public void Restore()
+            {
+                desiredColor = null;
+
+                if (statusStrip == null || statusStrip.IsDisposed)
                 {
-                    if (child == null || IsSimpleProbeType(child.GetType()) || !visited.Add(child))
+                    return;
+                }
+
+                isApplying = true;
+                statusStrip.SuspendLayout();
+
+                try
+                {
+                    if (hasSnapshot)
                     {
-                        continue;
-                    }
+                        statusStrip.BackColor = originalBackColor;
+                        statusStrip.ForeColor = originalForeColor;
 
-                    queue.Enqueue((child, current.Depth + 1));
+                        foreach (var snapshot in itemSnapshots)
+                        {
+                            if (snapshot.Key == null || snapshot.Key.IsDisposed)
+                            {
+                                continue;
+                            }
+
+                            snapshot.Key.BackColor = snapshot.Value.BackColor;
+                            snapshot.Key.ForeColor = snapshot.Value.ForeColor;
+                        }
+                    }
+                    else
+                    {
+                        statusStrip.BackColor = System.Drawing.SystemColors.Control;
+                        statusStrip.ForeColor = System.Drawing.SystemColors.ControlText;
+                    }
                 }
+                finally
+                {
+                    statusStrip.ResumeLayout(true);
+                    isApplying = false;
+                }
+
+                Dispose();
+                statusStrip.Invalidate(true);
+                statusStrip.Refresh();
+            }
+
+            private void ApplyDesiredColor()
+            {
+                if (!desiredColor.HasValue || statusStrip == null || statusStrip.IsDisposed)
+                {
+                    return;
+                }
+
+                System.Drawing.Color backColor = desiredColor.Value;
+                System.Drawing.Color foreColor = GetReadableStatusTextColor(backColor);
+
+                isApplying = true;
+                statusStrip.SuspendLayout();
+
+                try
+                {
+                    statusStrip.BackColor = backColor;
+                    statusStrip.ForeColor = foreColor;
+
+                    foreach (System.Windows.Forms.ToolStripItem item in statusStrip.Items)
+                    {
+                        ApplyItemColor(item, backColor, foreColor);
+                    }
+                }
+                finally
+                {
+                    statusStrip.ResumeLayout(true);
+                    isApplying = false;
+                }
+
+                statusStrip.Invalidate(true);
+                statusStrip.Refresh();
+            }
+
+            private void ApplyItemColor(System.Windows.Forms.ToolStripItem item, System.Drawing.Color backColor, System.Drawing.Color foreColor)
+            {
+                if (item == null || item.IsDisposed)
+                {
+                    return;
+                }
+
+                CaptureItemSnapshotIfNeeded(item);
+                item.BackColor = backColor;
+
+                if (!IsSubtleStatusStripSeparator(item))
+                {
+                    item.ForeColor = foreColor;
+                }
+            }
+
+            private void CaptureSnapshotIfNeeded()
+            {
+                if (hasSnapshot || statusStrip == null || statusStrip.IsDisposed)
+                {
+                    return;
+                }
+
+                originalBackColor = statusStrip.BackColor;
+                originalForeColor = statusStrip.ForeColor;
+                itemSnapshots.Clear();
+
+                foreach (System.Windows.Forms.ToolStripItem item in statusStrip.Items)
+                {
+                    CaptureItemSnapshotIfNeeded(item);
+                }
+
+                hasSnapshot = true;
+            }
+
+            private void CaptureItemSnapshotIfNeeded(System.Windows.Forms.ToolStripItem item)
+            {
+                if (item == null || itemSnapshots.ContainsKey(item))
+                {
+                    return;
+                }
+
+                itemSnapshots[item] = new ToolStripItemColorSnapshot
+                {
+                    BackColor = item.BackColor,
+                    ForeColor = item.ForeColor
+                };
+            }
+
+            private void OnBackColorChanged(object sender, EventArgs e)
+            {
+                if (isApplying || !desiredColor.HasValue || statusStrip == null || statusStrip.IsDisposed)
+                {
+                    return;
+                }
+
+                if (statusStrip.BackColor.ToArgb() == desiredColor.Value.ToArgb())
+                {
+                    return;
+                }
+
+                try
+                {
+                    if (statusStrip.IsHandleCreated)
+                    {
+                        statusStrip.BeginInvoke((System.Windows.Forms.MethodInvoker)ApplyDesiredColor);
+                    }
+                    else
+                    {
+                        ApplyDesiredColor();
+                    }
+                }
+                catch
+                {
+                    ApplyDesiredColor();
+                }
+            }
+
+            private void OnItemAdded(object sender, System.Windows.Forms.ToolStripItemEventArgs e)
+            {
+                if (!desiredColor.HasValue || e?.Item == null)
+                {
+                    return;
+                }
+
+                ApplyItemColor(e.Item, desiredColor.Value, GetReadableStatusTextColor(desiredColor.Value));
+            }
+
+            private void OnPaint(object sender, System.Windows.Forms.PaintEventArgs e)
+            {
+                if (isApplying || !desiredColor.HasValue || statusStrip == null || statusStrip.IsDisposed)
+                {
+                    return;
+                }
+
+                if (!StatusStripColorMatchesDesired())
+                {
+                    try
+                    {
+                        statusStrip.BeginInvoke((System.Windows.Forms.MethodInvoker)ApplyDesiredColor);
+                    }
+                    catch
+                    {
+                        ApplyDesiredColor();
+                    }
+                }
+            }
+
+            private void OnDisposed(object sender, EventArgs e)
+            {
+                Dispose();
+            }
+
+            private void Dispose()
+            {
+                if (statusStrip == null)
+                {
+                    return;
+                }
+
+                statusStrip.BackColorChanged -= OnBackColorChanged;
+                statusStrip.ItemAdded -= OnItemAdded;
+                statusStrip.Paint -= OnPaint;
+                statusStrip.Disposed -= OnDisposed;
+            }
+
+            private bool StatusStripColorMatchesDesired()
+            {
+                if (!desiredColor.HasValue || statusStrip.BackColor.ToArgb() != desiredColor.Value.ToArgb())
+                {
+                    return false;
+                }
+
+                foreach (System.Windows.Forms.ToolStripItem item in statusStrip.Items)
+                {
+                    if (item != null && !item.IsDisposed && item.BackColor.ToArgb() != desiredColor.Value.ToArgb())
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
             }
         }
 
-        private sealed class StatusStripSnapshot
+        private sealed class ToolStripItemColorSnapshot
         {
-            public System.Windows.Forms.ToolStripRenderMode RenderMode { get; set; }
-            public System.Windows.Forms.ToolStripRenderer Renderer { get; set; }
             public System.Drawing.Color BackColor { get; set; }
             public System.Drawing.Color ForeColor { get; set; }
-            public List<StatusStripItemSnapshot> ItemSnapshots { get; } = new List<StatusStripItemSnapshot>();
+        }
 
-            public void CaptureFrom(System.Windows.Forms.StatusStrip strip)
+        private static System.Drawing.Color GetReadableStatusTextColor(System.Drawing.Color backColor)
+        {
+            double contrastWithBlack = GetContrastRatio(backColor, System.Drawing.Color.Black);
+            double contrastWithWhite = GetContrastRatio(backColor, System.Drawing.Color.White);
+            return contrastWithBlack >= contrastWithWhite ? System.Drawing.Color.Black : System.Drawing.Color.White;
+        }
+
+        private static double GetContrastRatio(System.Drawing.Color a, System.Drawing.Color b)
+        {
+            double luminanceA = GetRelativeLuminance(a);
+            double luminanceB = GetRelativeLuminance(b);
+            double lighter = Math.Max(luminanceA, luminanceB);
+            double darker = Math.Min(luminanceA, luminanceB);
+            return (lighter + 0.05) / (darker + 0.05);
+        }
+
+        private static double GetRelativeLuminance(System.Drawing.Color color)
+        {
+            double r = GetLinearChannel(color.R / 255.0);
+            double g = GetLinearChannel(color.G / 255.0);
+            double b = GetLinearChannel(color.B / 255.0);
+            return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+        }
+
+        private static double GetLinearChannel(double channel)
+        {
+            return channel <= 0.03928
+                ? channel / 12.92
+                : Math.Pow((channel + 0.055) / 1.055, 2.4);
+        }
+
+        private static bool IsSubtleStatusStripSeparator(System.Windows.Forms.ToolStripItem item)
+        {
+            if (item == null)
             {
-                RenderMode = strip.RenderMode;
-                Renderer = strip.Renderer;
-                BackColor = strip.BackColor;
-                ForeColor = strip.ForeColor;
-                ItemSnapshots.Clear();
+                return false;
+            }
 
-                foreach (System.Windows.Forms.ToolStripItem item in strip.Items)
-                {
-                    ItemSnapshots.Add(StatusStripItemSnapshot.FromItem(item));
+            if (item is System.Windows.Forms.ToolStripSeparator)
+            {
+                return true;
+            }
 
-                    if (item is System.Windows.Forms.ToolStripDropDownItem dropDownItem)
-                    {
-                        foreach (System.Windows.Forms.ToolStripItem subItem in dropDownItem.DropDownItems)
-                        {
-                            ItemSnapshots.Add(StatusStripItemSnapshot.FromItem(subItem));
-                        }
-                    }
-                }
+            string probe = ((item.Name ?? string.Empty)
+                + " "
+                + (item.AccessibleName ?? string.Empty)
+                + " "
+                + (item.AccessibleDescription ?? string.Empty)
+                + " "
+                + (item.GetType().FullName ?? string.Empty)).ToLowerInvariant();
+
+            if (probe.IndexOf("separator", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            string text = (item.Text ?? string.Empty).Trim();
+            return text.Length == 1 && IsSeparatorGlyph(text[0]);
+        }
+
+        private static bool IsSeparatorGlyph(char value)
+        {
+            switch (value)
+            {
+                case '|':
+                case '\u00A6':
+                case '\u2502':
+                case '\u2503':
+                case '\u2506':
+                case '\u250A':
+                    return true;
+                default:
+                    return false;
             }
         }
 
@@ -639,32 +711,6 @@ namespace SSMS_EnvTabs
             return null;
         }
 
-        private sealed class StatusStripItemSnapshot
-        {
-            public System.Windows.Forms.ToolStripItem Item { get; private set; }
-            public System.Drawing.Color BackColor { get; private set; }
-            public System.Drawing.Color ForeColor { get; private set; }
-
-            public static StatusStripItemSnapshot FromItem(System.Windows.Forms.ToolStripItem item)
-            {
-                return new StatusStripItemSnapshot
-                {
-                    Item = item,
-                    BackColor = item?.BackColor ?? System.Drawing.SystemColors.Control,
-                    ForeColor = item?.ForeColor ?? System.Drawing.SystemColors.ControlText
-                };
-            }
-        }
-
-        private sealed class SolidStatusStripRenderer : System.Windows.Forms.ToolStripProfessionalRenderer
-        {
-            public SolidStatusStripRenderer(System.Drawing.Color backColor, System.Drawing.Color foreColor)
-                : base(new SolidStatusStripColorTable(backColor, foreColor))
-            {
-                RoundedEdges = false;
-            }
-        }
-
         private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
         {
             public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
@@ -682,157 +728,6 @@ namespace SSMS_EnvTabs
             {
                 return obj == null ? 0 : RuntimeHelpers.GetHashCode(obj);
             }
-        }
-
-        private sealed class SolidStatusStripColorTable : System.Windows.Forms.ProfessionalColorTable
-        {
-            private readonly System.Drawing.Color backColor;
-            private readonly System.Drawing.Color foreColor;
-            private readonly System.Drawing.Color separatorDarkColor;
-            private readonly System.Drawing.Color separatorLightColor;
-
-            public SolidStatusStripColorTable(System.Drawing.Color backColor, System.Drawing.Color foreColor)
-            {
-                this.backColor = backColor;
-                this.foreColor = foreColor;
-                separatorDarkColor = BlendStatusStripColor(backColor, foreColor, 0.24);
-                separatorLightColor = BlendStatusStripColor(backColor, foreColor, 0.12);
-            }
-
-            public override System.Drawing.Color StatusStripGradientBegin => backColor;
-
-            public override System.Drawing.Color StatusStripGradientEnd => backColor;
-
-            public override System.Drawing.Color ToolStripGradientBegin => backColor;
-
-            public override System.Drawing.Color ToolStripGradientMiddle => backColor;
-
-            public override System.Drawing.Color ToolStripGradientEnd => backColor;
-
-            public override System.Drawing.Color ToolStripBorder => backColor;
-
-            public override System.Drawing.Color ImageMarginGradientBegin => backColor;
-
-            public override System.Drawing.Color ImageMarginGradientMiddle => backColor;
-
-            public override System.Drawing.Color ImageMarginGradientEnd => backColor;
-
-            public override System.Drawing.Color MenuItemBorder => backColor;
-
-            public override System.Drawing.Color MenuItemSelected => backColor;
-
-            public override System.Drawing.Color MenuItemSelectedGradientBegin => backColor;
-
-            public override System.Drawing.Color MenuItemSelectedGradientEnd => backColor;
-
-            public override System.Drawing.Color ButtonSelectedBorder => backColor;
-
-            public override System.Drawing.Color ButtonSelectedGradientBegin => backColor;
-
-            public override System.Drawing.Color ButtonSelectedGradientMiddle => backColor;
-
-            public override System.Drawing.Color ButtonSelectedGradientEnd => backColor;
-
-            public override System.Drawing.Color ButtonPressedBorder => backColor;
-
-            public override System.Drawing.Color ButtonPressedGradientBegin => backColor;
-
-            public override System.Drawing.Color ButtonPressedGradientMiddle => backColor;
-
-            public override System.Drawing.Color ButtonPressedGradientEnd => backColor;
-
-            public override System.Drawing.Color ButtonCheckedGradientBegin => backColor;
-
-            public override System.Drawing.Color ButtonCheckedGradientMiddle => backColor;
-
-            public override System.Drawing.Color ButtonCheckedGradientEnd => backColor;
-
-            public override System.Drawing.Color ButtonCheckedHighlight => backColor;
-
-            public override System.Drawing.Color ButtonCheckedHighlightBorder => backColor;
-
-            public override System.Drawing.Color CheckBackground => backColor;
-
-            public override System.Drawing.Color CheckPressedBackground => backColor;
-
-            public override System.Drawing.Color CheckSelectedBackground => backColor;
-
-            public override System.Drawing.Color GripDark => separatorDarkColor;
-
-            public override System.Drawing.Color GripLight => separatorLightColor;
-
-            public override System.Drawing.Color SeparatorDark => separatorDarkColor;
-
-            public override System.Drawing.Color SeparatorLight => separatorLightColor;
-        }
-
-        private static System.Drawing.Color BlendStatusStripColor(System.Drawing.Color background, System.Drawing.Color foreground, double foregroundWeight)
-        {
-            foregroundWeight = Math.Max(0.0, Math.Min(1.0, foregroundWeight));
-            double backgroundWeight = 1.0 - foregroundWeight;
-
-            int r = (int)Math.Round((background.R * backgroundWeight) + (foreground.R * foregroundWeight));
-            int g = (int)Math.Round((background.G * backgroundWeight) + (foreground.G * foregroundWeight));
-            int b = (int)Math.Round((background.B * backgroundWeight) + (foreground.B * foregroundWeight));
-
-            return System.Drawing.Color.FromArgb(255, r, g, b);
-        }
-
-        private static bool TrySetStatusBarBackground(DependencyObject target, Brush brush)
-        {
-            if (target == null || brush == null)
-            {
-                return false;
-            }
-
-            bool changed = false;
-
-            if (target is Control control)
-            {
-                control.Background = brush;
-                changed = true;
-            }
-
-            if (target is Border border)
-            {
-                border.Background = brush;
-                changed = true;
-            }
-
-            if (target is Panel panel)
-            {
-                panel.Background = brush;
-                changed = true;
-            }
-
-            if (target is System.Windows.Shapes.Shape shape)
-            {
-                shape.Fill = brush;
-                shape.Stroke = brush;
-                changed = true;
-            }
-
-            if (TrySetBrushProperty(target, "Background", brush))
-            {
-                changed = true;
-            }
-
-            if (TrySetBrushProperty(target, "BorderBrush", brush))
-            {
-                changed = true;
-            }
-
-            if (TrySetBrushProperty(target, "Fill", brush))
-            {
-                changed = true;
-            }
-
-            if (TrySetBrushProperty(target, "Stroke", brush))
-            {
-                changed = true;
-            }
-
-            return changed;
         }
 
         private static Brush BuildIndicatorBrush(int colorIndex)
@@ -1019,27 +914,6 @@ namespace SSMS_EnvTabs
             }
 
             return false;
-        }
-
-        private static void TryClearBrushProperty(object target, string propertyName)
-        {
-            if (target == null || string.IsNullOrWhiteSpace(propertyName))
-            {
-                return;
-            }
-
-            try
-            {
-                var prop = target.GetType().GetProperty(propertyName);
-                if (prop != null && prop.CanWrite)
-                {
-                    prop.SetValue(target, null, null);
-                }
-            }
-            catch
-            {
-                // Ignore reflection clear failures.
-            }
         }
 
         private static string DescribeIndicator(DependencyObject indicator)
@@ -1709,104 +1583,6 @@ namespace SSMS_EnvTabs
             return false;
         }
 
-        private static void TryLogStatusBarOwnerCandidates(object docView, object connection)
-        {
-            if (docView == null)
-            {
-                return;
-            }
-
-            string key = (docView.GetType().FullName ?? docView.GetType().Name)
-                + "#"
-                + RuntimeHelpers.GetHashCode(docView)
-                + "|"
-                + (connection?.GetType().FullName ?? "<null>")
-                + "#"
-                + (connection != null ? RuntimeHelpers.GetHashCode(connection).ToString() : "null");
-
-            lock (statusBarProbeLock)
-            {
-                if (!loggedStatusBarProbeKeys.Add(key))
-                {
-                    return;
-                }
-            }
-
-            EnvTabsLog.Info($"StatusBarProbe: begin docView='{docView.GetType().FullName}' connection='{connection?.GetType().FullName ?? "<null>"}'");
-
-            int emitted = 0;
-            foreach (string candidate in EnumerateStatusBarOwnerCandidates(docView, connection))
-            {
-                EnvTabsLog.Info("StatusBarProbe: " + candidate);
-                emitted++;
-                if (emitted >= 40)
-                {
-                    break;
-                }
-            }
-
-            if (emitted == 0)
-            {
-                EnvTabsLog.Info("StatusBarProbe: no candidate members found near DocView or connection object.");
-            }
-        }
-
-        private static IEnumerable<string> EnumerateStatusBarOwnerCandidates(object docView, object connection)
-        {
-            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            var queue = new Queue<(object Node, string Path, int Depth)>();
-
-            EnqueueProbeNode(docView, "DocView", 0, queue, visited);
-            EnqueueProbeNode(connection, "Connection", 0, queue, visited);
-
-            int visitedCount = 0;
-            while (queue.Count > 0 && visitedCount < 160)
-            {
-                var current = queue.Dequeue();
-                visitedCount++;
-
-                foreach (var member in EnumerateProbeMembers(current.Node))
-                {
-                    if (member.Value == null)
-                    {
-                        continue;
-                    }
-
-                    Type valueType = member.Value.GetType();
-                    string path = current.Path + "." + member.Name;
-                    string probe = ((member.Name ?? string.Empty) + " " + (valueType.FullName ?? valueType.Name ?? string.Empty)).ToLowerInvariant();
-
-                    if (LooksLikeStatusBarOwnerProbe(probe))
-                    {
-                        yield return path + " => type='" + (valueType.FullName ?? valueType.Name) + "' value='" + FormatProbeValue(member.Value) + "'";
-                    }
-
-                    if (current.Depth >= 3 || IsSimpleProbeType(valueType))
-                    {
-                        continue;
-                    }
-
-                    if (visited.Add(member.Value))
-                    {
-                        queue.Enqueue((member.Value, path, current.Depth + 1));
-                    }
-                }
-            }
-        }
-
-        private static void EnqueueProbeNode(object value, string path, int depth, Queue<(object Node, string Path, int Depth)> queue, HashSet<object> visited)
-        {
-            if (value == null || queue == null || visited == null)
-            {
-                return;
-            }
-
-            if (visited.Add(value))
-            {
-                queue.Enqueue((value, path, depth));
-            }
-        }
-
         private static IEnumerable<(string Name, object Value)> EnumerateProbeMembers(object obj)
         {
             if (obj == null)
@@ -1879,25 +1655,6 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static bool LooksLikeStatusBarOwnerProbe(string probe)
-        {
-            if (string.IsNullOrWhiteSpace(probe))
-            {
-                return false;
-            }
-
-            return probe.Contains("status")
-                || probe.Contains("color")
-                || probe.Contains("pane")
-                || probe.Contains("host")
-                || probe.Contains("hwn")
-                || probe.Contains("viewpresenter")
-                || probe.Contains("generic")
-                || probe.Contains("client")
-                || probe.Contains("strip")
-                || probe.Contains("connection");
-        }
-
         private static bool IsSimpleProbeType(Type type)
         {
             if (type == null)
@@ -1919,112 +1676,6 @@ namespace SSMS_EnvTabs
                 || type == typeof(UIntPtr)
                 || type == typeof(System.Drawing.Color)
                 || typeof(Brush).IsAssignableFrom(type);
-        }
-
-        private static string FormatProbeValue(object value)
-        {
-            if (value == null)
-            {
-                return "<null>";
-            }
-
-            if (value is string s)
-            {
-                return s;
-            }
-
-            if (value is System.Drawing.Color drawingColor)
-            {
-                return drawingColor.ToArgb().ToString("X8");
-            }
-
-            if (value is Brush brush)
-            {
-                return brush.ToString();
-            }
-
-            Type type = value.GetType();
-            if (type.IsPrimitive || type.IsEnum || value is decimal || value is Guid || value is DateTime || value is TimeSpan || value is IntPtr || value is UIntPtr)
-            {
-                return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
-            }
-
-            return type.FullName ?? type.Name;
-        }
-
-        private static void TryPopulateFromCaptions(IVsWindowFrame frame, ref string server, ref string database)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-            if (frame == null) return;
-
-            string caption = TryReadFrameCaption(frame);
-            if (TryParseServerDatabaseFromCaption(caption, out string s1, out string d1))
-            {
-                if (string.IsNullOrWhiteSpace(server)) server = s1;
-                if (string.IsNullOrWhiteSpace(database)) database = d1;
-                return;
-            }
-
-            try
-            {
-                if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_EditorCaption, out object editorCaptionObj) == VSConstants.S_OK)
-                {
-                    string editorCaption = editorCaptionObj as string;
-                    if (TryParseServerDatabaseFromCaption(editorCaption, out string s2, out string d2))
-                    {
-                        if (string.IsNullOrWhiteSpace(server)) server = s2;
-                        if (string.IsNullOrWhiteSpace(database)) database = d2;
-                    }
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
-        private static bool TryParseServerDatabaseFromCaption(string caption, out string server, out string database)
-        {
-            server = null;
-            database = null;
-
-            if (string.IsNullOrWhiteSpace(caption)) return false;
-
-            try
-            {
-                int dash = caption.IndexOf(" - ", StringComparison.Ordinal);
-                if (dash < 0)
-                {
-                    return false;
-                }
-
-                string tail = caption.Substring(dash + 3);
-                int paren = tail.IndexOf(" (", StringComparison.Ordinal);
-                if (paren >= 0)
-                {
-                    tail = tail.Substring(0, paren);
-                }
-
-                tail = tail.Trim();
-                if (string.IsNullOrWhiteSpace(tail)) return false;
-
-                int dot = tail.IndexOf('.');
-                if (dot > 0 && dot < tail.Length - 1)
-                {
-                    server = tail.Substring(0, dot).Trim();
-                    database = tail.Substring(dot + 1).Trim();
-                }
-                else
-                {
-                    server = tail;
-                }
-
-                return !string.IsNullOrWhiteSpace(server) || !string.IsNullOrWhiteSpace(database);
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         private List<OpenDocumentInfo> GetOpenDocumentsSnapshot()
@@ -2112,27 +1763,6 @@ namespace SSMS_EnvTabs
             try
             {
                 if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_Caption, out object caption) == VSConstants.S_OK)
-                {
-                    return caption as string;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-
-            return null;
-        }
-
-        private static string TryReadFrameEditorCaption(IVsWindowFrame frame)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            if (frame == null) return null;
-
-            try
-            {
-                if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_EditorCaption, out object caption) == VSConstants.S_OK)
                 {
                     return caption as string;
                 }
