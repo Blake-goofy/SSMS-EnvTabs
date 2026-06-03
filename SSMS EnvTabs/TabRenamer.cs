@@ -38,6 +38,8 @@ namespace SSMS_EnvTabs
         // look like a new user-provided name.
         private static readonly Dictionary<uint, string> CookieToLastAppliedCaption =
             new Dictionary<uint, string>();
+        private static readonly Dictionary<uint, HashSet<string>> CookieToAppliedCaptionHistory =
+            new Dictionary<uint, HashSet<string>>();
 
         // Matches SSMS's built-in sequential caption for new unsaved queries, e.g. "SQLQuery1".
         // After .sql is stripped this is the only form we need to match.
@@ -52,6 +54,7 @@ namespace SSMS_EnvTabs
             OriginalCaptionByCookie.Remove(cookie);
             CookieToOriginalPureName.Remove(cookie);
             CookieToLastAppliedCaption.Remove(cookie);
+            CookieToAppliedCaptionHistory.Remove(cookie);
         }
 
         /// <summary>
@@ -73,6 +76,7 @@ namespace SSMS_EnvTabs
             OriginalCaptionByCookie.Remove(cookie);
             CookieToOriginalPureName.Remove(cookie);
             CookieToLastAppliedCaption.Remove(cookie);
+            CookieToAppliedCaptionHistory.Remove(cookie);
             originalCaption = StripDirtyIndicators(originalCaption);
 
             if (frame == null || string.IsNullOrWhiteSpace(originalCaption))
@@ -191,16 +195,16 @@ namespace SSMS_EnvTabs
                     // the raw temp filename (e.g. "5tekxtn0") instead of "SQLQuery1". Treat that as
                     // a default name too, so we don't mistake it for a user-customised caption.
                     string monikerBase = System.IO.Path.GetFileNameWithoutExtension(tab.Moniker ?? "");
-                    bool isExtensionGeneratedCaption = CookieToLastAppliedCaption.TryGetValue(tab.Cookie, out string lastAppliedCaption)
-                        && (string.Equals(tab.FrameCaption, lastAppliedCaption, StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(pureName, GetPureName(lastAppliedCaption, ssmsSuffix, enableRemoveDotSql), StringComparison.OrdinalIgnoreCase));
-                    bool isDefault = string.IsNullOrWhiteSpace(pureName)
+                    bool isGeneratedCaption = IsKnownAppliedCaption(tab.Cookie, tab.FrameCaption, ssmsSuffix, enableRemoveDotSql)
+                        || IsGeneratedCaption(tab.FrameCaption, generatedDefault, ssmsSuffix, enableRemoveDotSql);
+                    bool isBuiltInDefault = string.IsNullOrWhiteSpace(pureName)
                         || SsmsDefaultQueryCaptionRegex.IsMatch(pureName)
-                        || string.Equals(pureName, generatedDefault, StringComparison.OrdinalIgnoreCase)
                         || (!string.IsNullOrEmpty(monikerBase) && string.Equals(pureName, monikerBase, StringComparison.OrdinalIgnoreCase))
-                        || isExtensionGeneratedCaption;
+                        || IsExecutingOnlyCaption(tab.FrameCaption);
+                    bool hasStoredCustomName = CookieToOriginalPureName.TryGetValue(tab.Cookie, out string storedPureName);
+                    bool currentLooksCustom = !isBuiltInDefault && !isGeneratedCaption;
 
-                    if (!isDefault)
+                    if (currentLooksCustom)
                     {
                         // Use the pure name captured the very first time we processed this tab so that
                         // subsequent poll cycles don't re-derive it from an already-renamed caption
@@ -210,13 +214,13 @@ namespace SSMS_EnvTabs
                         // If the stored pure name exists, check whether the current caption still matches
                         // what we'd produce from it. If not, the user has manually renamed the tab again,
                         // so update the stored name to reflect their new choice.
-                        if (CookieToOriginalPureName.TryGetValue(tab.Cookie, out string storedPureName))
+                        if (hasStoredCustomName)
                         {
                             string expectedCaption = BuildSavedStyleCaption(effectiveSavedStyle, storedPureName, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database);
                             if (!string.Equals(pureName, storedPureName, StringComparison.OrdinalIgnoreCase)
-                                && !string.Equals(pureName, expectedCaption, StringComparison.OrdinalIgnoreCase))
+                                && !IsGeneratedCaption(tab.FrameCaption, expectedCaption, ssmsSuffix, enableRemoveDotSql))
                             {
-                                // User has set a new caption — treat that as the new base name.
+                                // User has set a new caption - treat that as the new base name.
                                 CookieToOriginalPureName[tab.Cookie] = pureName;
                             }
                         }
@@ -226,11 +230,16 @@ namespace SSMS_EnvTabs
                         }
                         pureName = CookieToOriginalPureName[tab.Cookie];
                     }
+                    else if (hasStoredCustomName)
+                    {
+                        pureName = storedPureName;
+                    }
 
-                    newCaption = isDefault
-                        ? generatedDefault
-                        : BuildSavedStyleCaption(effectiveSavedStyle, pureName, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database);
+                    newCaption = hasStoredCustomName || currentLooksCustom
+                        ? BuildSavedStyleCaption(effectiveSavedStyle, pureName, assignment.GroupName, tab.Server, tab.ServerAlias, tab.Database)
+                        : generatedDefault;
 
+                    bool isDefault = !(hasStoredCustomName || currentLooksCustom);
                     EnvTabsLog.Info($"[Rename] cookie={tab.Cookie} pureName='{pureName}' isDefault={isDefault} -> '{newCaption}'");
                 }
                 else
@@ -256,6 +265,7 @@ namespace SSMS_EnvTabs
                 {
                     renamed++;
                     CookieToLastAppliedCaption[tab.Cookie] = newCaption;
+                    RememberAppliedCaption(tab.Cookie, newCaption, tabSuffix ?? "");
                     EnvTabsLog.Info($"Renamed ({propertyNameUsed}): cookie={tab.Cookie}, '{tab.FrameCaption}' -> '{newCaption}'");
                 }
                 else
@@ -299,6 +309,59 @@ namespace SSMS_EnvTabs
         private static string GetPureName(string rawCaption, string ssmsSuffix, bool enableRemoveDotSql)
         {
             return TabCaptionFormatter.GetPureName(rawCaption, ssmsSuffix, enableRemoveDotSql);
+        }
+
+        private static bool IsGeneratedCaption(string actualCaption, string expectedCaption, string ssmsSuffix, bool enableRemoveDotSql)
+        {
+            return TabCaptionFormatter.CaptionsEquivalent(actualCaption, expectedCaption, ssmsSuffix, enableRemoveDotSql)
+                || TabCaptionFormatter.CaptionsEquivalent(actualCaption, expectedCaption, ssmsSuffix, !enableRemoveDotSql);
+        }
+
+        private static bool IsKnownAppliedCaption(uint cookie, string caption, string ssmsSuffix, bool enableRemoveDotSql)
+        {
+            if (cookie != 0
+                && CookieToLastAppliedCaption.TryGetValue(cookie, out string lastAppliedCaption)
+                && IsGeneratedCaption(caption, lastAppliedCaption, ssmsSuffix, enableRemoveDotSql))
+            {
+                return true;
+            }
+
+            if (cookie == 0 || !CookieToAppliedCaptionHistory.TryGetValue(cookie, out HashSet<string> history))
+            {
+                return false;
+            }
+
+            foreach (string appliedCaption in history)
+            {
+                if (IsGeneratedCaption(caption, appliedCaption, ssmsSuffix, enableRemoveDotSql))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void RememberAppliedCaption(uint cookie, string caption, string ssmsSuffix)
+        {
+            if (cookie == 0 || string.IsNullOrWhiteSpace(caption))
+            {
+                return;
+            }
+
+            if (!CookieToAppliedCaptionHistory.TryGetValue(cookie, out HashSet<string> history))
+            {
+                history = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                CookieToAppliedCaptionHistory[cookie] = history;
+            }
+
+            history.Add(TabCaptionFormatter.NormalizeForComparison(caption, ssmsSuffix, enableRemoveDotSql: true));
+            history.Add(TabCaptionFormatter.NormalizeForComparison(caption, ssmsSuffix, enableRemoveDotSql: false));
+        }
+
+        private static bool IsExecutingOnlyCaption(string caption)
+        {
+            return string.IsNullOrWhiteSpace(TabCaptionFormatter.StripExecutionPrefix(caption));
         }
 
         /// <summary>

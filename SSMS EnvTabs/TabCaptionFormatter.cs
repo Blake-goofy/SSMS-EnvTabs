@@ -7,7 +7,7 @@ namespace SSMS_EnvTabs
     {
         internal static string GetPureName(string rawCaption, string ssmsSuffix, bool enableRemoveDotSql)
         {
-            string caption = StripDirtyIndicators(rawCaption);
+            string caption = StripExecutionPrefix(StripDirtyIndicators(rawCaption));
             if (string.IsNullOrEmpty(caption)) return string.Empty;
 
             if (!string.IsNullOrEmpty(ssmsSuffix))
@@ -24,6 +24,22 @@ namespace SSMS_EnvTabs
 
             caption = StripSqlExtension(caption, enableRemoveDotSql);
             return caption;
+        }
+
+        internal static bool CaptionsEquivalent(string actualCaption, string expectedCaption, string ssmsSuffix, bool enableRemoveDotSql)
+        {
+            string actual = NormalizeForComparison(actualCaption, ssmsSuffix, enableRemoveDotSql);
+            string expected = NormalizeForComparison(expectedCaption, ssmsSuffix, enableRemoveDotSql);
+
+            return !string.IsNullOrWhiteSpace(actual)
+                && !string.IsNullOrWhiteSpace(expected)
+                && string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string NormalizeForComparison(string rawCaption, string ssmsSuffix, bool enableRemoveDotSql)
+        {
+            string caption = GetPureName(rawCaption, ssmsSuffix, enableRemoveDotSql);
+            return caption?.Trim() ?? string.Empty;
         }
 
         internal static string StripDirtyIndicators(string name)
@@ -48,6 +64,23 @@ namespace SSMS_EnvTabs
                     changed = true;
                 }
             } while (changed);
+
+            return s;
+        }
+
+        internal static string StripExecutionPrefix(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return name ?? string.Empty;
+            }
+
+            string s = name.Trim();
+            const string prefix = "Executing...";
+            if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return s.Substring(prefix.Length).TrimStart();
+            }
 
             return s;
         }

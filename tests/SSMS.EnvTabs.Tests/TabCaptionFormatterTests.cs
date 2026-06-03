@@ -51,6 +51,14 @@ namespace SSMS_EnvTabs.Tests
         }
 
         [TestMethod]
+        public void GetPureName_RemovesExecutingPrefix()
+        {
+            string pure = TabCaptionFormatter.GetPureName("Executing... report.sql* \u2B24 - PROD", " - PROD", enableRemoveDotSql: true);
+
+            Assert.AreEqual("report", pure);
+        }
+
+        [TestMethod]
         public void GetPureName_CaptionIsOnlySuffix()
         {
             string pure = TabCaptionFormatter.GetPureName("query - SERVER", " - SERVER", enableRemoveDotSql: true);
@@ -86,6 +94,36 @@ namespace SSMS_EnvTabs.Tests
         public void StripDirtyIndicators_RemovesMixedDirtyMarkers()
         {
             Assert.AreEqual("xidjdmdj..sql", TabCaptionFormatter.StripDirtyIndicators("xidjdmdj..sql* \u2B24 *"));
+        }
+
+        [TestMethod]
+        public void StripExecutionPrefix_RemovesExecutingPrefix()
+        {
+            Assert.AreEqual("report.sql", TabCaptionFormatter.StripExecutionPrefix("Executing... report.sql"));
+        }
+
+        [TestMethod]
+        public void CaptionsEquivalent_IgnoresDirtyIndicatorsAndExecutingPrefix()
+        {
+            bool equivalent = TabCaptionFormatter.CaptionsEquivalent(
+                "Executing... report.sql* \u2B24 - PROD",
+                "report",
+                " - PROD",
+                enableRemoveDotSql: true);
+
+            Assert.IsTrue(equivalent);
+        }
+
+        [TestMethod]
+        public void CaptionsEquivalent_DistinguishesCustomCaptionFromGeneratedCaption()
+        {
+            bool equivalent = TabCaptionFormatter.CaptionsEquivalent(
+                "Customer Investigation",
+                "1. PROD",
+                "",
+                enableRemoveDotSql: true);
+
+            Assert.IsFalse(equivalent);
         }
 
         [TestMethod]
