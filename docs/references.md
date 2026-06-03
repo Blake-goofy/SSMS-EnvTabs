@@ -9,7 +9,7 @@ Install:
 
 Reinstall:
 ```
-.\dev\reinstall.ps1
+.\.vscode\build-install.ps1
 ```
 
 Uninstall:
@@ -37,25 +37,22 @@ C:\Users\blake\AppData\Local\Temp\<guid>\ColorByRegexConfig.txt
 - SSMS creates this after opening first query tab
 - Extension writes generated regex lines here
 
-## VS Code Build And Test
+## VS Code Build And Install
 
-This repo includes VS Code tasks and helper scripts so you can build and run tests without leaving VS Code.
+This repo includes a single VS Code task for the normal development loop: build the Release VSIX and install it into SSMS.
 
 Requirements:
 
 - Visual Studio or Build Tools with MSBuild
-- .NET SDK (for running test project)
+- SSMS 22 with `VSIXInstaller.exe`
 
 Run tasks from VS Code:
 
-- `Terminal -> Run Task -> Build VSIX (Debug)`
-- `Terminal -> Run Task -> Build VSIX (Release)`
-- `Terminal -> Run Task -> Run Regression Tests`
+- `Terminal -> Run Task -> Build and Install`
 
 Helper scripts:
 
-- `dev/vscode-build.ps1`
-- `dev/vscode-test.ps1`
+- `.vscode/build-install.ps1`
 
 Task definitions:
 

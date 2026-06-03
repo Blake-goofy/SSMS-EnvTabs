@@ -28,6 +28,13 @@ SSMS EnvTabs is a Visual Studio Extension (VSIX) for SQL Server Management Studi
 
 ## Developer Workflows
 
+### Building
+
+```powershell
+& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" "SSMS EnvTabs.sln" /restore /m /p:Configuration=Debug /p:Platform="Any CPU" /p:DeployExtension=false /verbosity:minimal
+dotnet test "tests\SSMS.EnvTabs.Tests\SSMS.EnvTabs.Tests.csproj" --no-build
+```
+
 ### Debugging
 - **Start Action**: The project defaults to `devenv.exe /rootsuffix Exp`. To debug in SSMS, change project properties → Debug → Start external program to your `ssms.exe` path (e.g., `C:\Program Files (x86)\Microsoft SQL Server Management Studio 18\Common7\IDE\Ssms.exe`).
 - **Command Arguments**: Use `/log` to enable SSMS logging if needed.
