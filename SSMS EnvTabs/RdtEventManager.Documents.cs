@@ -120,14 +120,14 @@ namespace SSMS_EnvTabs
             bool statusBarEnabled = matchedRule?.EnableStatusBarColor ?? settings.InitialStatusBarColor;
             if (!statusBarEnabled)
             {
-                TrySetQueryEditorStatusBarColor(frame, null, out _);
+                TryRestoreQueryEditorStatusBarColor(frame);
                 return;
             }
 
             int? colorIndex = manualMatch?.ColorIndex ?? matchedRule?.ColorIndex;
             if (!colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length)
             {
-                TrySetQueryEditorStatusBarColor(frame, null, out _);
+                TryRestoreQueryEditorStatusBarColor(frame);
                 return;
             }
 
@@ -141,7 +141,7 @@ namespace SSMS_EnvTabs
             EnvTabsLog.Info($"StatusBarColor: target not found cookie={docCookie} server='{server}' db='{database}'");
         }
 
-        private static bool TrySetQueryEditorStatusBarColor(IVsWindowFrame frame, System.Drawing.Color? color, out string targetDescription)
+        private static bool TrySetQueryEditorStatusBarColor(IVsWindowFrame frame, System.Drawing.Color color, out string targetDescription)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -163,24 +163,14 @@ namespace SSMS_EnvTabs
                 return false;
             }
 
-            System.Drawing.Color targetColor = color ?? System.Drawing.SystemColors.Control;
-            bool nativeApplied = TrySetNativeServerBackground(statusBarManager, targetColor);
+            bool nativeApplied = TrySetNativeServerBackground(statusBarManager, color);
             bool stripApplied = false;
-
+            string statusStripTarget = "<not-found>";
             if (TryGetStatusStrip(statusBarManager, out System.Windows.Forms.StatusStrip statusStrip))
             {
-                var controller = GetStatusStripColorController(statusStrip);
-                if (color.HasValue)
-                {
-                    controller.ApplyColor(color.Value);
-                }
-                else
-                {
-                    controller.Restore();
-                    statusStripColorControllers.Remove(statusStrip);
-                }
-
+                GetStatusStripColorController(statusStrip).ApplyColor(color);
                 stripApplied = true;
+                statusStripTarget = statusStrip.GetType().FullName;
             }
 
             if (!nativeApplied && !stripApplied)
@@ -189,8 +179,49 @@ namespace SSMS_EnvTabs
             }
 
             targetDescription = "DocView.StatusBarManager; nativeSetServerBackground=" + nativeApplied
-                + "; statusStrip=" + (stripApplied ? statusStrip.GetType().FullName : "<not-found>");
+                + "; statusStrip=" + statusStripTarget;
             return true;
+        }
+
+        private static void TryRestoreQueryEditorStatusBarColor(IVsWindowFrame frame)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (!TryGetStatusBarManager(frame, out object statusBarManager))
+            {
+                return;
+            }
+
+            if (!TryGetStatusStrip(statusBarManager, out System.Windows.Forms.StatusStrip statusStrip))
+            {
+                return;
+            }
+
+            if (statusStripColorControllers.TryGetValue(statusStrip, out StatusStripColorController controller))
+            {
+                controller.Restore();
+                statusStripColorControllers.Remove(statusStrip);
+            }
+        }
+
+        private static bool TryGetStatusBarManager(IVsWindowFrame frame, out object statusBarManager)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            statusBarManager = null;
+            if (frame == null)
+            {
+                return false;
+            }
+
+            if (frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView) != VSConstants.S_OK || docView == null)
+            {
+                return false;
+            }
+
+            return TryGetReflectionMemberValue(docView, "StatusBarManager", out statusBarManager)
+                || TryGetReflectionMemberValue(docView, "m_statusBarManager", out statusBarManager)
+                || TryGetReflectionMemberValue(docView, "statusBarManager", out statusBarManager);
         }
 
         private static bool TrySetNativeServerBackground(object statusBarManager, System.Drawing.Color color)
@@ -342,31 +373,29 @@ namespace SSMS_EnvTabs
                     return;
                 }
 
+                if (!hasSnapshot)
+                {
+                    Dispose();
+                    return;
+                }
+
                 isApplying = true;
                 statusStrip.SuspendLayout();
 
                 try
                 {
-                    if (hasSnapshot)
-                    {
-                        statusStrip.BackColor = originalBackColor;
-                        statusStrip.ForeColor = originalForeColor;
+                    statusStrip.BackColor = originalBackColor;
+                    statusStrip.ForeColor = originalForeColor;
 
-                        foreach (var snapshot in itemSnapshots)
+                    foreach (var snapshot in itemSnapshots)
+                    {
+                        if (snapshot.Key == null || snapshot.Key.IsDisposed)
                         {
-                            if (snapshot.Key == null || snapshot.Key.IsDisposed)
-                            {
-                                continue;
-                            }
-
-                            snapshot.Key.BackColor = snapshot.Value.BackColor;
-                            snapshot.Key.ForeColor = snapshot.Value.ForeColor;
+                            continue;
                         }
-                    }
-                    else
-                    {
-                        statusStrip.BackColor = System.Drawing.SystemColors.Control;
-                        statusStrip.ForeColor = System.Drawing.SystemColors.ControlText;
+
+                        snapshot.Key.BackColor = snapshot.Value.BackColor;
+                        snapshot.Key.ForeColor = snapshot.Value.ForeColor;
                     }
                 }
                 finally
@@ -474,21 +503,7 @@ namespace SSMS_EnvTabs
                     return;
                 }
 
-                try
-                {
-                    if (statusStrip.IsHandleCreated)
-                    {
-                        statusStrip.BeginInvoke((System.Windows.Forms.MethodInvoker)ApplyDesiredColor);
-                    }
-                    else
-                    {
-                        ApplyDesiredColor();
-                    }
-                }
-                catch
-                {
-                    ApplyDesiredColor();
-                }
+                QueueApplyDesiredColor();
             }
 
             private void OnItemAdded(object sender, System.Windows.Forms.ToolStripItemEventArgs e)
@@ -510,14 +525,26 @@ namespace SSMS_EnvTabs
 
                 if (!StatusStripColorMatchesDesired())
                 {
-                    try
+                    QueueApplyDesiredColor();
+                }
+            }
+
+            private void QueueApplyDesiredColor()
+            {
+                try
+                {
+                    if (statusStrip.IsHandleCreated)
                     {
                         statusStrip.BeginInvoke((System.Windows.Forms.MethodInvoker)ApplyDesiredColor);
                     }
-                    catch
+                    else
                     {
                         ApplyDesiredColor();
                     }
+                }
+                catch
+                {
+                    ApplyDesiredColor();
                 }
             }
 
