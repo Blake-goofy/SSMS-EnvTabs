@@ -238,7 +238,7 @@ namespace SSMS_EnvTabs
 
                 if (IsExecutingCaption(caption))
                 {
-                    return true;
+                    return false;
                 }
                 
                 // If the reason is AttributeChange (connection change), we should attempt rename even if it doesn't look eligible anymore (e.g. if it was already renamed)
@@ -282,6 +282,7 @@ namespace SSMS_EnvTabs
 
                             if (renamedCount > 0)
                             {
+                                RecordLatestCaption(docCookie, frame);
                                 EnvTabsLog.Info($"Renamed tab. Reason={reason}, Cookie={docCookie}, Server='{server}', DB='{database}', Count={renamedCount}");
                             }
                         }
@@ -613,6 +614,10 @@ namespace SSMS_EnvTabs
                             ScheduleRenameRetry(doc.Cookie, "CaptionPoll");
                         }
                     }
+                    else
+                    {
+                        ScheduleRenameRetry(doc.Cookie, "CaptionPoll:Executing");
+                    }
                 }
             }
 
@@ -674,6 +679,22 @@ namespace SSMS_EnvTabs
             catch(Exception ex)
             {
                 EnvTabsLog.Info($"CheckActiveFrame Error: {ex.Message}");
+            }
+        }
+
+        private void RecordLatestCaption(uint docCookie, IVsWindowFrame frame)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (docCookie == 0 || frame == null)
+            {
+                return;
+            }
+
+            string latestCaption = TryReadFrameCaption(frame);
+            if (!string.IsNullOrWhiteSpace(latestCaption))
+            {
+                lastCaptionByCookie[docCookie] = latestCaption;
             }
         }
 
