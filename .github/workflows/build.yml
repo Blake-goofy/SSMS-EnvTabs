@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-workflow.json
+name: Build
+
+permissions:
+  actions: write
+  contents: write
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  Configuration: Release
+  DeployExtension: False
+  Solution: SSMS EnvTabs.sln
+  TestProject: tests\SSMS.EnvTabs.Tests\SSMS.EnvTabs.Tests.csproj
+  VsixManifestPath: SSMS EnvTabs\source.extension.vsixmanifest
+  VsixManifestSourcePath: SSMS EnvTabs\Properties\AssemblyInfo.cs
+  VsixOutputPath: SSMS EnvTabs\bin\Release\SSMS EnvTabs.vsix
+  ArtifactName: SSMS-EnvTabs.vsix
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.vsix_version.outputs.version-number }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.sln', '**/*.csproj', '**/packages.config', '**/packages.lock.json', '**/nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Increment VSIX version
+        id: vsix_version
+        uses: madskristensen/vsix-version-stamp@v1.1
+        with:
+          manifest-file: ${{ env.VsixManifestPath }}
+          vsix-token-source-file: ${{ env.VsixManifestSourcePath }}
+
+      - name: Restore NuGet packages
+        run: msbuild "${{ env.Solution }}" /v:m -restore /t:Restore
+
+      - name: Build
+        run: msbuild "${{ env.Solution }}" /v:m /m /p:Configuration=${{ env.Configuration }} /p:DeployExtension=${{ env.DeployExtension }}
+
+      - name: Run tests
+        run: dotnet test "${{ env.TestProject }}" --configuration ${{ env.Configuration }} --no-build --no-restore --verbosity normal --logger:"trx;LogFileName=test-results.trx"
+
+      - name: Report test results
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@v3
+        with:
+          name: Test Results
+          path: "**/test-results.trx"
+          reporter: dotnet-trx
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ArtifactName }}
+          path: ${{ env.VsixOutputPath }}
+
+  publish:
+    name: Publish to SSMS Gallery
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Check publish configuration
+        id: publish_gate
+        shell: pwsh
+        env:
+          VSIX_GALLERY_MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:VSIX_GALLERY_MANAGE_TOKEN)) {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            "VSIX_GALLERY_MANAGE_TOKEN is not set. Skipping SSMS Gallery publish." >> $env:GITHUB_STEP_SUMMARY
+          }
+          else {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Download VSIX artifact
+        if: ${{ steps.publish_gate.outputs.enabled == 'true' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.ArtifactName }}
+          path: artifacts
+
+      - name: Upload to Open SSMS VSIX Gallery
+        if: ${{ steps.publish_gate.outputs.enabled == 'true' }}
+        uses: madskristensen/publish-vsixgallery@v1
+        with:
+          vsix-file: artifacts\SSMS EnvTabs.vsix
+          manage-token: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
