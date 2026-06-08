@@ -4,7 +4,9 @@
         <Identity Id="SSMS_EnvTabs" Version="2.2.3" Language="en-US" Publisher="Blake Becker" />
         <DisplayName>SSMS EnvTabs</DisplayName>
         <Description xml:space="preserve">Color and name SSMS tabs by environment.</Description>
+        <MoreInfo>https://github.com/Blake-goofy/SSMS-EnvTabs</MoreInfo>
         <License>LICENSE</License>
+        <GettingStartedGuide>https://github.com/Blake-goofy/SSMS-EnvTabs/wiki</GettingStartedGuide>
         <Icon>envtabs-icon.png</Icon>
         <PreviewImage>envtabs-icon.png</PreviewImage>
     </Metadata>
