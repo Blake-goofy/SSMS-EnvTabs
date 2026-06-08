@@ -167,6 +167,8 @@ namespace SSMS_EnvTabs
         private const string DefaultSuggestedGroupNameStyle = "[serverAlias] [db]";
         private const string DefaultNewQueryRenameStyle = "[#]. [groupName]";
         private const string DefaultSavedFileRenameStyle = "[filename]";
+        private const double DefaultStyleTextBoxWidth = 440d;
+        private const double EditingStyleTextBoxWidth = 352d;
         private const string DefaultConfigResourceName = "SSMS_EnvTabs.DefaultTabGroupConfig.json";
 
         private static readonly IReadOnlyList<ColorPaletteItem> ColorPaletteItems = BuildColorPaletteItems();
@@ -1330,6 +1332,7 @@ namespace SSMS_EnvTabs
                 textBox.Focusable = isActive;
                 textBox.IsTabStop = isActive;
                 textBox.Cursor = isActive ? Cursors.IBeam : Cursors.Arrow;
+                textBox.Width = isActive ? EditingStyleTextBoxWidth : DefaultStyleTextBoxWidth;
             }
 
             if (editButton != null)
