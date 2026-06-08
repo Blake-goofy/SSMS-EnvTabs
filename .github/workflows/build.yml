@@ -110,7 +110,23 @@ jobs:
 
       - name: Upload to Open SSMS VSIX Gallery
         if: ${{ steps.publish_gate.outputs.enabled == 'true' }}
-        uses: madskristensen/publish-vsixgallery@v1
-        with:
-          vsix-file: artifacts\SSMS EnvTabs.vsix
-          manage-token: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
+        shell: pwsh
+        env:
+          VSIX_GALLERY_MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+          ISSUE_TRACKER_URL: ${{ github.server_url }}/${{ github.repository }}/issues
+          README_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/README.md
+        run: |
+          $uploadUrl = "https://ssmsgallery.azurewebsites.net/api/upload?repo=$([uri]::EscapeDataString($env:REPOSITORY_URL))&issuetracker=$([uri]::EscapeDataString($env:ISSUE_TRACKER_URL))&readmeUrl=$([uri]::EscapeDataString($env:README_URL))"
+          $headers = @{
+            "X-Manage-Token" = $env:VSIX_GALLERY_MANAGE_TOKEN
+          }
+          $response = Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $headers -InFile "artifacts\SSMS EnvTabs.vsix" -ContentType "application/octet-stream"
+
+          if ($null -ne $response.url) {
+            "Published extension: $($response.url)" >> $env:GITHUB_STEP_SUMMARY
+          }
+
+          if ($null -ne $response.manageUrl) {
+            "Manage extension: $($response.manageUrl)" >> $env:GITHUB_STEP_SUMMARY
+          }
