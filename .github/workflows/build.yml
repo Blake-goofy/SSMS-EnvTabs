@@ -18,7 +18,6 @@ env:
   Solution: SSMS EnvTabs.sln
   TestProject: tests\SSMS.EnvTabs.Tests\SSMS.EnvTabs.Tests.csproj
   VsixManifestPath: SSMS EnvTabs\source.extension.vsixmanifest
-  VsixManifestSourcePath: SSMS EnvTabs\Properties\AssemblyInfo.cs
   VsixOutputPath: SSMS EnvTabs\bin\Release\SSMS EnvTabs.vsix
   ArtifactName: SSMS-EnvTabs.vsix
 
@@ -48,12 +47,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Increment VSIX version
+      - name: Read VSIX version
         id: vsix_version
-        uses: madskristensen/vsix-version-stamp@v1.1
-        with:
-          manifest-file: ${{ env.VsixManifestPath }}
-          vsix-token-source-file: ${{ env.VsixManifestSourcePath }}
+        shell: pwsh
+        run: |
+          [xml]$manifest = Get-Content "${{ env.VsixManifestPath }}"
+          $namespace = New-Object System.Xml.XmlNamespaceManager($manifest.NameTable)
+          $namespace.AddNamespace("vsix", "http://schemas.microsoft.com/developer/vsx-schema/2011")
+          $version = $manifest.SelectSingleNode("/vsix:PackageManifest/vsix:Metadata/vsix:Identity", $namespace).Version
+          "version-number=$version" >> $env:GITHUB_OUTPUT
 
       - name: Restore NuGet packages
         run: msbuild "${{ env.Solution }}" /v:m -restore /t:Restore
