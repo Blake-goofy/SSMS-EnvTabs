@@ -110,23 +110,39 @@ jobs:
 
       - name: Upload to Open SSMS VSIX Gallery
         if: ${{ steps.publish_gate.outputs.enabled == 'true' }}
-        shell: pwsh
+        shell: bash
         env:
           VSIX_GALLERY_MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
           ISSUE_TRACKER_URL: ${{ github.server_url }}/${{ github.repository }}/issues
           README_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/README.md
         run: |
-          $uploadUrl = "https://ssmsgallery.azurewebsites.net/api/upload?repo=$([uri]::EscapeDataString($env:REPOSITORY_URL))&issuetracker=$([uri]::EscapeDataString($env:ISSUE_TRACKER_URL))&readmeUrl=$([uri]::EscapeDataString($env:README_URL))"
-          $headers = @{
-            "X-Manage-Token" = $env:VSIX_GALLERY_MANAGE_TOKEN
-          }
-          $response = Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $headers -InFile "artifacts\SSMS EnvTabs.vsix" -ContentType "application/octet-stream"
+          encode() { python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
-          if ($null -ne $response.url) {
-            "Published extension: $($response.url)" >> $env:GITHUB_STEP_SUMMARY
-          }
+          upload_url="https://ssmsgallery.azurewebsites.net/api/upload?repo=$(encode "$REPOSITORY_URL")&issuetracker=$(encode "$ISSUE_TRACKER_URL")&readmeUrl=$(encode "$README_URL")"
 
-          if ($null -ne $response.manageUrl) {
-            "Manage extension: $($response.manageUrl)" >> $env:GITHUB_STEP_SUMMARY
-          }
+          curl_args=(--silent --show-error --fail-with-body -F "file=@artifacts/SSMS EnvTabs.vsix")
+
+          if [ -n "$VSIX_GALLERY_MANAGE_TOKEN" ]; then
+            echo "::add-mask::$VSIX_GALLERY_MANAGE_TOKEN"
+            curl_args+=(-H "X-Manage-Token: $VSIX_GALLERY_MANAGE_TOKEN")
+          fi
+
+          result=$(curl "${curl_args[@]}" "$upload_url")
+          echo "Upload successful"
+
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            UPLOAD_JSON="$result" python3 <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+import json
+import os
+
+data = json.loads(os.environ["UPLOAD_JSON"])
+url = data.get("url") or data.get("Url")
+manage_url = data.get("manageUrl") or data.get("ManageUrl")
+
+if url:
+    print(f"Published extension: {url}")
+if manage_url:
+    print(f"Manage extension: {manage_url}")
+PY
+          fi
