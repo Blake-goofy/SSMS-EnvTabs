@@ -1,4 +1,4 @@
-# SSMS EnvTabs
+<h1><img src="images/envtabs-icon.svg" alt="SSMS EnvTabs icon" width="32" height="32" align="absmiddle" /> SSMS EnvTabs</h1>
 
 A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatically names query tabs and leverages SSMS's native regex feature to color them based on server and database connections. Keep your production, QA, and development environments visually distinct and easily identifiable.
 
