@@ -132,17 +132,5 @@ jobs:
           echo "Upload successful"
 
           if [ -n "$GITHUB_STEP_SUMMARY" ]; then
-            UPLOAD_JSON="$result" python3 <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
-import json
-import os
-
-data = json.loads(os.environ["UPLOAD_JSON"])
-url = data.get("url") or data.get("Url")
-manage_url = data.get("manageUrl") or data.get("ManageUrl")
-
-if url:
-    print(f"Published extension: {url}")
-if manage_url:
-    print(f"Manage extension: {manage_url}")
-PY
+            UPLOAD_JSON="$result" python3 -c 'import json, os; data = json.loads(os.environ["UPLOAD_JSON"]); url = data.get("url") or data.get("Url"); manage_url = data.get("manageUrl") or data.get("ManageUrl"); print(f"Published extension: {url}") if url else None; print(f"Manage extension: {manage_url}") if manage_url else None' >> "$GITHUB_STEP_SUMMARY" || true
           fi
