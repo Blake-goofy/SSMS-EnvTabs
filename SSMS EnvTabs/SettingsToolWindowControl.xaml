@@ -80,7 +80,7 @@
                                     CornerRadius="12"
                                     BorderThickness="1"
                                     BorderBrush="{DynamicResource EnvTabsBorderBrush}"
-                                    Background="{DynamicResource EnvTabsBackgroundBrush}" />
+                                    Background="{DynamicResource EnvTabsButtonNeutralBrush}" />
                             <Ellipse x:Name="Thumb"
                                      Width="18"
                                      Height="18"
@@ -354,32 +354,80 @@
             <Setter Property="MinWidth" Value="72" />
         </Style>
 
-        <Style x:Key="EnvTabsTabItemStyle" TargetType="TabItem">
-            <Setter Property="Background" Value="{DynamicResource EnvTabsTabHeaderBackgroundBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource EnvTabsTabHeaderForegroundBrush}" />
+        <Style x:Key="EnvTabsSettingsTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="{DynamicResource EnvTabsBackgroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="TabStripPlacement" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Grid KeyboardNavigation.TabNavigation="Local">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="200" />
+                                    <ColumnDefinition Width="1" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0"
+                                        Background="{TemplateBinding Background}"
+                                        Padding="10,12">
+                                    <TabPanel x:Name="HeaderPanel"
+                                              IsItemsHost="True"
+                                              KeyboardNavigation.TabIndex="1" />
+                                </Border>
+                                <Border Grid.Column="1"
+                                        Background="{DynamicResource EnvTabsBorderBrush}"
+                                        Opacity="0.45" />
+                                <Border Grid.Column="2"
+                                        Background="{TemplateBinding Background}"
+                                        Padding="24,0,24,0">
+                                    <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                      Margin="0"
+                                                      HorizontalAlignment="Stretch"
+                                                      VerticalAlignment="Stretch"
+                                                      ContentSource="SelectedContent"
+                                                      KeyboardNavigation.TabIndex="2" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="EnvTabsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource EnvTabsTabHeaderForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
                         <Border x:Name="TabBorder"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1,1,1,0"
+                                BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}"
-                                Margin="0,0,4,0">
+                                Margin="0,0,0,6"
+                                CornerRadius="3">
                             <ContentPresenter ContentSource="Header"
-                                              HorizontalAlignment="Center"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                               VerticalAlignment="Center"
                                               RecognizesAccessKey="True" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderHoverBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource EnvTabsForegroundBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource EnvTabsTabHeaderSelectedBrush}" />
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource EnvTabsBorderBrush}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
@@ -456,15 +504,22 @@
         </Grid>
 
         <TabControl x:Name="SettingsTabControl"
-                Grid.Row="1"
+                    Grid.Row="1"
                     Background="{DynamicResource EnvTabsBackgroundBrush}"
                     Foreground="{DynamicResource EnvTabsForegroundBrush}"
                     BorderBrush="{DynamicResource EnvTabsBorderBrush}"
-                BorderThickness="1"
-                ItemContainerStyle="{StaticResource EnvTabsTabItemStyle}">
+                    BorderThickness="1"
+                    Style="{StaticResource EnvTabsSettingsTabControlStyle}"
+                    ItemContainerStyle="{StaticResource EnvTabsTabItemStyle}">
             <TabItem x:Name="GeneralSettingsTab" Header="Settings">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12,10,12,10" MaxWidth="820" HorizontalAlignment="Center">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              HorizontalContentAlignment="Center"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch">
+                    <StackPanel Margin="12,10,12,10"
+                                MaxWidth="820"
+                                HorizontalAlignment="Center">
                         <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="General" Margin="0,0,0,6" />
 
                         <Grid Style="{StaticResource OptionRowGridStyle}">
@@ -622,8 +677,14 @@
             </TabItem>
 
             <TabItem x:Name="StyleTemplatesTab" Header="Style Templates">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12,10,12,10" MaxWidth="820" HorizontalAlignment="Center">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              HorizontalContentAlignment="Center"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch">
+                    <StackPanel Margin="12,10,12,10"
+                                MaxWidth="820"
+                                HorizontalAlignment="Center">
                         <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Style Templates" Margin="0,0,0,6" />
                         <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Click Edit to modify a style and use [token] buttons for easy configuring." Margin="0,0,0,8" />
 
@@ -723,8 +784,14 @@
             </TabItem>
 
             <TabItem x:Name="ConnectionGroupsTab" Header="Connection Groups">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12,10,12,10" MaxWidth="860" HorizontalAlignment="Center">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              HorizontalContentAlignment="Center"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch">
+                    <StackPanel Margin="12,10,12,10"
+                                MaxWidth="860"
+                                HorizontalAlignment="Center">
                         <StackPanel x:Name="ServerAliasSectionPanel">
                             <Grid Style="{StaticResource OptionRowGridStyle}" Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
