@@ -411,6 +411,10 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                <Button x:Name="UninstallButton"
+                    Content="Uninstall"
+                    Style="{StaticResource SettingsActionButtonStyle}"
+                    ToolTip="Uninstall EnvTabs from SSMS" />
                 <Button x:Name="ResetDefaultsButton"
                     Content="Reset to default"
                     Style="{StaticResource SettingsActionButtonStyle}"

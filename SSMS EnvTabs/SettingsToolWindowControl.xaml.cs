@@ -24,8 +24,8 @@ namespace SSMS_EnvTabs
     public partial class SettingsToolWindowControl : UserControl
     {
         private bool suppressAutoSave;
-
         private Button openJsonButton;
+        private Button uninstallButton;
         private Button resetDefaultsButton;
         private Button reloadButton;
         private Button updateEnvTabsButton;
@@ -200,6 +200,7 @@ namespace SSMS_EnvTabs
             Application.LoadComponent(this, viewUri);
 
             openJsonButton = FindRequiredControl<Button>("OpenJsonButton");
+            uninstallButton = FindRequiredControl<Button>("UninstallButton");
             resetDefaultsButton = FindRequiredControl<Button>("ResetDefaultsButton");
             reloadButton = FindRequiredControl<Button>("ReloadButton");
             updateEnvTabsButton = FindRequiredControl<Button>("UpdateEnvTabsButton");
@@ -247,6 +248,7 @@ namespace SSMS_EnvTabs
             statusText = FindRequiredControl<TextBlock>("StatusText");
 
             openJsonButton.Click += OpenJsonButton_Click;
+            uninstallButton.Click += UninstallButton_Click;
             resetDefaultsButton.Click += ResetDefaultsButton_Click;
             reloadButton.Click += ReloadButton_Click;
             updateEnvTabsButton.Click += UpdateEnvTabsButton_Click;
@@ -841,6 +843,39 @@ namespace SSMS_EnvTabs
             else
             {
                 SaveSettingsTabFromUi("Settings reset to defaults.");
+            }
+        }
+
+        private void UninstallButton_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (!UninstallCoordinator.IsVsixInstallerAvailable())
+            {
+                statusText.Text = "VSIXInstaller.exe was not found.";
+                EnvTabsLog.Info("SettingsToolWindowControl uninstall failed: VSIXInstaller.exe was not found.");
+                return;
+            }
+
+            try
+            {
+                using (var dialog = new UninstallPromptDialog())
+                {
+                    if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.Yes)
+                    {
+                        return;
+                    }
+                }
+
+                if (!UninstallCoordinator.RequestNormalShutdown())
+                {
+                    statusText.Text = "Failed to close SSMS for uninstall.";
+                }
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = "Failed to start uninstall.";
+                EnvTabsLog.Info($"SettingsToolWindowControl uninstall failed: {ex.Message}");
             }
         }
 

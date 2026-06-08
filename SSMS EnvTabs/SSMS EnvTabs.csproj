@@ -79,6 +79,10 @@
     <Compile Include="TabCaptionFormatter.cs" />
     <Compile Include="TabRenamer.cs" />
     <Compile Include="TabRuleMatcher.cs" />
+    <Compile Include="UninstallCoordinator.cs" />
+    <Compile Include="UninstallPromptDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="UpdateChecker.cs" />
     <Compile Include="UpdateInfoBar.cs" />
     <Compile Include="UpdatePromptDialog.cs">
