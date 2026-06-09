@@ -517,8 +517,7 @@ namespace SSMS_EnvTabs
 
         private static bool IsExecutingCaption(string caption)
         {
-            if (string.IsNullOrWhiteSpace(caption)) return false;
-            return caption.StartsWith("Executing...", StringComparison.OrdinalIgnoreCase);
+            return TabCaptionFormatter.HasExecutionMarker(caption);
         }
 
         private void ConnectionPollTick(object state)

@@ -59,6 +59,14 @@ namespace SSMS_EnvTabs.Tests
         }
 
         [TestMethod]
+        public void GetPureName_RemovesExecutingSuffix()
+        {
+            string pure = TabCaptionFormatter.GetPureName("Prod db -  Executing... \u2B24", "", enableRemoveDotSql: true);
+
+            Assert.AreEqual("Prod db", pure);
+        }
+
+        [TestMethod]
         public void GetPureName_CaptionIsOnlySuffix()
         {
             string pure = TabCaptionFormatter.GetPureName("query - SERVER", " - SERVER", enableRemoveDotSql: true);
@@ -103,12 +111,36 @@ namespace SSMS_EnvTabs.Tests
         }
 
         [TestMethod]
+        public void StripExecutionPrefix_RemovesExecutingSuffix()
+        {
+            Assert.AreEqual("report.sql", TabCaptionFormatter.StripExecutionPrefix("report.sql -  Executing..."));
+        }
+
+        [TestMethod]
+        public void HasExecutionMarker_DetectsSuffixForm()
+        {
+            Assert.IsTrue(TabCaptionFormatter.HasExecutionMarker("SQLQuery13.sql -  Executing... \u2B24"));
+        }
+
+        [TestMethod]
         public void CaptionsEquivalent_IgnoresDirtyIndicatorsAndExecutingPrefix()
         {
             bool equivalent = TabCaptionFormatter.CaptionsEquivalent(
                 "Executing... report.sql* \u2B24 - PROD",
                 "report",
                 " - PROD",
+                enableRemoveDotSql: true);
+
+            Assert.IsTrue(equivalent);
+        }
+
+        [TestMethod]
+        public void CaptionsEquivalent_IgnoresExecutingSuffix()
+        {
+            bool equivalent = TabCaptionFormatter.CaptionsEquivalent(
+                "Prod db -  Executing... \u2B24",
+                "Prod db",
+                string.Empty,
                 enableRemoveDotSql: true);
 
             Assert.IsTrue(equivalent);

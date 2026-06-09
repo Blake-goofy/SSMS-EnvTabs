@@ -5,6 +5,8 @@ namespace SSMS_EnvTabs
 {
     internal static class TabCaptionFormatter
     {
+        private const string ExecutingToken = "Executing...";
+
         internal static string GetPureName(string rawCaption, string ssmsSuffix, bool enableRemoveDotSql)
         {
             string caption = StripExecutionPrefix(StripDirtyIndicators(rawCaption));
@@ -76,13 +78,43 @@ namespace SSMS_EnvTabs
             }
 
             string s = name.Trim();
-            const string prefix = "Executing...";
-            if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            bool changed;
+            do
             {
-                return s.Substring(prefix.Length).TrimStart();
-            }
+                changed = false;
+
+                if (s.StartsWith(ExecutingToken, StringComparison.OrdinalIgnoreCase))
+                {
+                    s = s.Substring(ExecutingToken.Length).TrimStart();
+                    changed = true;
+                }
+
+                string withoutSuffix = Regex.Replace(s, @"\s+-\s*Executing\.\.\.$", string.Empty, RegexOptions.IgnoreCase);
+                if (!string.Equals(withoutSuffix, s, StringComparison.Ordinal))
+                {
+                    s = withoutSuffix.TrimEnd();
+                    changed = true;
+                }
+            } while (changed);
 
             return s;
+        }
+
+        internal static bool HasExecutionMarker(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string caption = StripDirtyIndicators(name);
+            if (string.IsNullOrWhiteSpace(caption))
+            {
+                return false;
+            }
+
+            return caption.StartsWith(ExecutingToken, StringComparison.OrdinalIgnoreCase)
+                || Regex.IsMatch(caption, @"\s+-\s*Executing\.\.\.$", RegexOptions.IgnoreCase);
         }
 
         internal static string StripSqlExtension(string name, bool enabled)
