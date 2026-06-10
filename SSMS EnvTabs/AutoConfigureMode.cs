@@ -10,6 +10,8 @@ namespace SSMS_EnvTabs
 
         internal static string Normalize(string value)
         {
+            value = value?.Trim();
+
             if (string.Equals(value, Server, StringComparison.OrdinalIgnoreCase))
             {
                 return Server;
