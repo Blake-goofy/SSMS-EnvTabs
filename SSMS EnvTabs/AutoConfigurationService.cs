@@ -45,10 +45,10 @@ namespace SSMS_EnvTabs
             if (config == null || config.Settings == null) return;
 
             string mode = config.Settings.AutoConfigure;
-            if (string.IsNullOrWhiteSpace(mode)) return;
+            if (!AutoConfigureMode.IsEnabled(mode)) return;
 
             // Normalize mode
-            bool useDb = mode.IndexOf("db", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            bool useDb = AutoConfigureMode.UsesDatabase(mode);
 
             string connectionKey = useDb ? $"{server}::{database}" : server;
             

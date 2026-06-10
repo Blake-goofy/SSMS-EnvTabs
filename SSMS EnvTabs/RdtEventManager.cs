@@ -293,7 +293,7 @@ namespace SSMS_EnvTabs
                     }
 
                     // Auto-Configure logic if no rule matched
-                    if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure))
+                    if (!hasMatchingRule && AutoConfigureMode.IsEnabled(config.Settings?.AutoConfigure))
                     {
                         if (!string.IsNullOrWhiteSpace(server))
                         {
@@ -330,7 +330,7 @@ namespace SSMS_EnvTabs
                         var manualMatch = TabRuleMatcher.MatchManual(manualRules, moniker);
                         bool hasMatchingRule = manualMatch != null || TabRuleMatcher.MatchRule(rules, server, database) != null;
 
-                        if (!hasMatchingRule && !string.IsNullOrWhiteSpace(config.Settings?.AutoConfigure) && !string.IsNullOrWhiteSpace(server))
+                        if (!hasMatchingRule && AutoConfigureMode.IsEnabled(config.Settings?.AutoConfigure) && !string.IsNullOrWhiteSpace(server))
                         {
                             EnvTabsLog.Info($"AutoConfigure: No matching rule (auto-rename disabled). Reason={reason}, Cookie={docCookie}, Server='{server}', DB='{database}'");
                             autoConfigTriggered = true;
