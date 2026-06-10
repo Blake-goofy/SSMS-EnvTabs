@@ -33,5 +33,6 @@ namespace SSMS_EnvTabs.Tests
             Assert.AreEqual(AutoConfigureMode.Off, AutoConfigureMode.Normalize("off"));
             Assert.AreEqual(AutoConfigureMode.Off, AutoConfigureMode.Normalize(" off "));
             Assert.AreEqual(AutoConfigureMode.ServerDatabase, AutoConfigureMode.Normalize("unknown"));
+        }
     }
 }
