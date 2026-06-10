@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\SSMS EnvTabs\ColorConfigPathResolution.cs" Link="Source\ColorConfigPathResolution.cs" />
+    <Compile Include="..\..\SSMS EnvTabs\AutoConfigureMode.cs" Link="Source\AutoConfigureMode.cs" />
     <Compile Include="..\..\SSMS EnvTabs\TabGroupConfigDefaults.cs" Link="Source\TabGroupConfigDefaults.cs" />
     <Compile Include="..\..\SSMS EnvTabs\TabGroupConfigModels.cs" Link="Source\TabGroupConfigModels.cs" />
     <Compile Include="..\..\SSMS EnvTabs\TabRuleMatcher.cs" Link="Source\TabRuleMatcher.cs" />

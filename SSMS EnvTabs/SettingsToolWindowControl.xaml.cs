@@ -613,22 +613,7 @@ namespace SSMS_EnvTabs
 
         private static string NormalizeAutoConfigure(string value)
         {
-            if (string.Equals(value, "server", StringComparison.OrdinalIgnoreCase))
-            {
-                return "server";
-            }
-
-            if (string.Equals(value, "server db", StringComparison.OrdinalIgnoreCase))
-            {
-                return "server db";
-            }
-
-            if (string.Equals(value, "off", StringComparison.OrdinalIgnoreCase))
-            {
-                return "off";
-            }
-
-            return DefaultAutoConfigureValue;
+            return AutoConfigureMode.Normalize(value);
         }
 
         private void SaveSettingsTabFromUi(string statusMessage)
