@@ -11,6 +11,7 @@ namespace SSMS_EnvTabs.Tests
             Assert.IsTrue(AutoConfigureMode.IsEnabled("server"));
             Assert.IsTrue(AutoConfigureMode.IsEnabled("server db"));
             Assert.IsFalse(AutoConfigureMode.IsEnabled("off"));
+            Assert.IsFalse(AutoConfigureMode.IsEnabled(" off "));
             Assert.IsTrue(AutoConfigureMode.IsEnabled(null));
             Assert.IsTrue(AutoConfigureMode.IsEnabled(string.Empty));
             Assert.IsTrue(AutoConfigureMode.IsEnabled("unknown"));
