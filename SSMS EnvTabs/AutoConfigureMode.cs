@@ -30,12 +30,12 @@ namespace SSMS_EnvTabs
 
         internal static bool IsEnabled(string value)
         {
-            return !string.Equals(Normalize(value), Off, StringComparison.OrdinalIgnoreCase);
+            return !string.Equals(Normalize(value), Off, StringComparison.Ordinal);
         }
 
         internal static bool UsesDatabase(string value)
         {
-            return string.Equals(Normalize(value), ServerDatabase, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(Normalize(value), ServerDatabase, StringComparison.Ordinal);
         }
     }
 }
