@@ -8,23 +8,6 @@ namespace SSMS_EnvTabs
 {
     internal static class TabGroupConfigDefaults
     {
-        private sealed class SettingMember
-        {
-            public string JsonName { get; set; }
-
-            public PropertyInfo Property { get; set; }
-        }
-
-        private static readonly SettingMember[] SettingsMembers = typeof(TabGroupSettings)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Select(property => new SettingMember
-            {
-                JsonName = property.GetCustomAttribute<DataMemberAttribute>()?.Name,
-                Property = property
-            })
-            .Where(member => !string.IsNullOrWhiteSpace(member.JsonName) && member.Property.CanRead && member.Property.CanWrite)
-            .ToArray();
-
         internal static IReadOnlyList<string> ApplyMissingSettingDefaults(TabGroupConfig config, string existingJsonText, TabGroupConfig defaultConfig)
         {
             List<string> migratedSettings = new List<string>();
@@ -39,10 +22,16 @@ namespace SSMS_EnvTabs
                 return migratedSettings;
             }
 
+            var members = typeof(TabGroupSettings)
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Select(p => (JsonName: p.GetCustomAttribute<DataMemberAttribute>()?.Name, Property: p))
+                .Where(m => !string.IsNullOrWhiteSpace(m.JsonName) && m.Property.CanRead && m.Property.CanWrite)
+                .ToArray();
+
             if (!TryExtractObjectJson(existingJsonText, "settings", out string settingsJson))
             {
                 config.Settings = CloneSettings(defaultSettings);
-                migratedSettings.AddRange(SettingsMembers.Select(member => member.JsonName));
+                migratedSettings.AddRange(members.Select(m => m.JsonName));
                 return migratedSettings;
             }
 
@@ -51,7 +40,7 @@ namespace SSMS_EnvTabs
                 config.Settings = new TabGroupSettings();
             }
 
-            foreach (SettingMember setting in SettingsMembers)
+            foreach (var setting in members)
             {
                 if (JsonContainsProperty(settingsJson, setting.JsonName))
                 {

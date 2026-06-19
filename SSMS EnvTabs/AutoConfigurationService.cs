@@ -10,27 +10,7 @@ namespace SSMS_EnvTabs
     {
         private static readonly HashSet<string> suppressedConnections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        internal static event Action<DialogClosedInfo> DialogClosed;
-
-        internal sealed class DialogClosedInfo
-        {
-            public DialogResult Result { get; set; }
-            public string Server { get; set; }
-            public string Database { get; set; }
-            public bool ChangesApplied { get; set; }
-        }
-
-        private struct AddRuleContext
-        {
-            public TabGroupConfig Config { get; set; }
-            public string Server { get; set; }
-            public string Database { get; set; }
-            public bool UseDb { get; set; }
-            public string GroupName { get; set; }
-            public int? ColorIndex { get; set; }
-            public bool? EnableLineIndicatorColor { get; set; }
-            public bool? EnableStatusBarColor { get; set; }
-        }
+        internal static event Action<DialogResult, string, string, bool> DialogClosed;
 
         public static void ClearSuppressed()
         {
@@ -120,16 +100,7 @@ namespace SSMS_EnvTabs
             if (!config.Settings.EnableConfigurePrompt)
             {
                 // Silent mode: save the rule immediately with the suggested defaults.
-                var silentContext = new AddRuleContext
-                {
-                    Config = config,
-                    Server = server,
-                    Database = database,
-                    UseDb = useDb,
-                    GroupName = suggestedName,
-                    ColorIndex = nextColor
-                };
-                AddRuleAndSave(silentContext);
+                AddRuleAndSave(config, server, database, useDb, suggestedName, nextColor, null, null);
                 return;
             }
 
@@ -194,18 +165,7 @@ namespace SSMS_EnvTabs
                             config.ServerAliases[server] = dlg.ServerAlias;
                         }
 
-                        var context = new AddRuleContext
-                        {
-                            Config = config,
-                            Server = server,
-                            Database = database,
-                            UseDb = useDb,
-                            GroupName = updatedName,
-                            ColorIndex = updatedColor,
-                            EnableLineIndicatorColor = dlg.EnableLineIndicatorColor,
-                            EnableStatusBarColor = dlg.EnableStatusBarColor
-                        };
-                        newRule = AddRuleAndSave(context);
+                        newRule = AddRuleAndSave(config, server, database, useDb, updatedName, updatedColor, dlg.EnableLineIndicatorColor, dlg.EnableStatusBarColor);
                         changesApplied = true;
 
                         if (result == DialogResult.Yes)
@@ -217,16 +177,7 @@ namespace SSMS_EnvTabs
                     {
                         // Save a silent null rule to suppress future auto-configure prompts
                         // for this connection without renaming or coloring the tab.
-                        var silentContext = new AddRuleContext
-                        {
-                            Config = config,
-                            Server = server,
-                            Database = database,
-                            UseDb = useDb,
-                            GroupName = null,
-                            ColorIndex = null
-                        };
-                        newRule = AddRuleAndSave(silentContext);
+                        newRule = AddRuleAndSave(config, server, database, useDb, null, null, null, null);
                         changesApplied = true;
                     }
 
@@ -247,13 +198,7 @@ namespace SSMS_EnvTabs
                         }
                     }
 
-                    DialogClosed?.Invoke(new DialogClosedInfo
-                    {
-                        Result = result,
-                        Server = server,
-                        Database = database,
-                        ChangesApplied = changesApplied
-                    });
+                    DialogClosed?.Invoke(result, server, database, changesApplied);
                 }
             }
             catch (System.Exception ex)
@@ -262,10 +207,9 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static TabGroupRule AddRuleAndSave(AddRuleContext ctx)
+        private static TabGroupRule AddRuleAndSave(TabGroupConfig config, string server, string database, bool useDb, string groupName, int? colorIndex, bool? enableLineIndicatorColor, bool? enableStatusBarColor)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            var config = ctx.Config;
 
             // Check if we should remove the default example rule
             var exampleRule = config.ConnectionGroups.FirstOrDefault(g => g.GroupName == "AppServer MyDb");
@@ -279,7 +223,7 @@ namespace SSMS_EnvTabs
             {
                 config.ServerAliases.Remove("MY-APP-SERVER");
             }
-            
+
             // Renumber priorities: existing rules move to 20, 30, 40...
             var sorted = config.ConnectionGroups.OrderBy(x => x.Priority).ToList();
             int currentBase = 20;
@@ -292,17 +236,17 @@ namespace SSMS_EnvTabs
             // Create new rule at 10
             var newRule = new TabGroupRule
             {
-                GroupName = ctx.GroupName,
-                Server = ctx.Server,
-                Database = ctx.UseDb ? (ctx.Database ?? "%") : "%",
+                GroupName = groupName,
+                Server = server,
+                Database = useDb ? (database ?? "%") : "%",
                 Priority = 10,
-                ColorIndex = ctx.ColorIndex,
-                EnableLineIndicatorColor = ctx.EnableLineIndicatorColor,
-                EnableStatusBarColor = ctx.EnableStatusBarColor
+                ColorIndex = colorIndex,
+                EnableLineIndicatorColor = enableLineIndicatorColor,
+                EnableStatusBarColor = enableStatusBarColor
             };
 
             config.ConnectionGroups.Add(newRule);
-            
+
             // Save
             SaveConfig(config);
             return newRule;
