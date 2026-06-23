@@ -22,49 +22,12 @@ namespace SSMS_EnvTabs
         private const string StagedVsixFilePattern = "SSMS-EnvTabs-*.vsix";
         private const string Sha256DigestPrefix = "sha256:";
         private static int pendingStartupCheck;
-        private static readonly object diagnosticsLock = new object();
         private static readonly object stagedVsixLock = new object();
-        private static string lastUpdateResult = "No update check has run yet.";
-        internal static event Action LastUpdateResultChanged;
 
         private static string stagedVsixPath;
         private static GitHubRelease stagedRelease;
         private static bool pendingUpdateOnClose;
         private static UpdateInfoBar activeInfoBar;
-
-        internal static string LastUpdateResult
-        {
-            get
-            {
-                lock (diagnosticsLock)
-                {
-                    return lastUpdateResult;
-                }
-            }
-        }
-
-        private static void SetLastUpdateResult(string message)
-        {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return;
-            }
-
-            string stamped = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}";
-            lock (diagnosticsLock)
-            {
-                lastUpdateResult = stamped;
-            }
-
-            try
-            {
-                LastUpdateResultChanged?.Invoke();
-            }
-            catch
-            {
-                // Best-effort diagnostics notification.
-            }
-        }
 
         public static void ScheduleCheck(AsyncPackage package, TabGroupSettings settings)
         {
@@ -78,13 +41,11 @@ namespace SSMS_EnvTabs
             if (settings?.EnableUpdateChecks == false)
             {
                 EnvTabsLog.Info("Update check skipped: disabled by settings.");
-                SetLastUpdateResult("Update check skipped because it is disabled in settings.");
                 return;
             }
 
             Interlocked.Exchange(ref pendingStartupCheck, 1);
             EnvTabsLog.Info("Update check scheduled shortly after package initialization.");
-            SetLastUpdateResult("Startup update check scheduled.");
 
             _ = package.JoinableTaskFactory.RunAsync(async () =>
             {
@@ -99,7 +60,6 @@ namespace SSMS_EnvTabs
                     }
 
                     EnvTabsLog.Info("Running startup update check after initialization delay.");
-                    SetLastUpdateResult("Running startup update check.");
                     await CheckForUpdatesAsync(package, token, showUpToDate: false);
                 }
                 catch (OperationCanceledException)
@@ -109,7 +69,6 @@ namespace SSMS_EnvTabs
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Startup update check failed: {ex.Message}");
-                    SetLastUpdateResult($"Startup update check failed: {ex.Message}");
                 }
             });
         }
@@ -124,7 +83,7 @@ namespace SSMS_EnvTabs
             if (settings?.EnableUpdateChecks == false)
             {
                 Interlocked.Exchange(ref pendingStartupCheck, 0);
-                SetLastUpdateResult("Startup update check canceled because update checks are disabled.");
+                EnvTabsLog.Info("Startup update check canceled because update checks are disabled.");
             }
         }
 
@@ -133,7 +92,6 @@ namespace SSMS_EnvTabs
             if (!ignoreSettings && settings?.EnableUpdateChecks == false)
             {
                 EnvTabsLog.Info("Manual update check skipped: disabled by settings.");
-                SetLastUpdateResult("Manual update check skipped because it is disabled in settings.");
                 return;
             }
 
@@ -142,7 +100,6 @@ namespace SSMS_EnvTabs
                 try
                 {
                     EnvTabsLog.Info("Manual update check started.");
-                    SetLastUpdateResult("Manual update check started.");
                     await CheckForUpdatesAsync(package, package.DisposalToken, showUpToDate: true);
                 }
                 catch (OperationCanceledException)
@@ -152,7 +109,6 @@ namespace SSMS_EnvTabs
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Manual update check failed: {ex.Message}");
-                    SetLastUpdateResult($"Manual update check failed: {ex.Message}");
                 }
             });
         }
@@ -163,7 +119,6 @@ namespace SSMS_EnvTabs
             if (currentVersion == null)
             {
                 EnvTabsLog.Info("Update check failed: current version unavailable.");
-                SetLastUpdateResult("Update check failed because current version could not be determined.");
                 return;
             }
 
@@ -171,7 +126,6 @@ namespace SSMS_EnvTabs
             if (release == null || release.Draft)
             {
                 EnvTabsLog.Info("Update check failed: release info unavailable.");
-                SetLastUpdateResult("Update check failed because latest release info was unavailable.");
                 return;
             }
 
@@ -179,14 +133,12 @@ namespace SSMS_EnvTabs
             if (latestVersion == null)
             {
                 EnvTabsLog.Info("Update check failed: latest version parse failed.");
-                SetLastUpdateResult("Update check failed because latest release version could not be parsed.");
                 return;
             }
 
             if (latestVersion <= currentVersion)
             {
                 EnvTabsLog.Info($"Update check: already on latest ({currentVersion}).");
-                SetLastUpdateResult($"Up to date ({FormatVersion(currentVersion)}).");
                 if (showUpToDate)
                 {
                     await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
@@ -198,7 +150,6 @@ namespace SSMS_EnvTabs
             await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
 
             EnvTabsLog.Info($"Update available: {latestVersion} (current {currentVersion}).");
-            SetLastUpdateResult($"Update available: {FormatVersion(currentVersion)} -> {FormatVersion(latestVersion)}.");
             ShowUpdatePrompt(package, release, latestVersion, currentVersion);
         }
 
@@ -323,7 +274,6 @@ namespace SSMS_EnvTabs
                     else
                     {
                         EnvTabsLog.Info("Staged VSIX not ready; opening release page.");
-                        SetLastUpdateResult("Update package not yet downloaded; opened release page.");
                         OpenUrl(stagedRelease?.HtmlUrl);
                     }
                     break;
@@ -332,14 +282,12 @@ namespace SSMS_EnvTabs
                     if (!string.IsNullOrWhiteSpace(stagedVsixPath) && File.Exists(stagedVsixPath))
                     {
                         pendingUpdateOnClose = true;
-                        SetLastUpdateResult("Update will install when SSMS closes.");
                         activeInfoBar = null;
                         EnvTabsLog.Info("Deferred update on close enabled.");
                     }
                     else
                     {
                         EnvTabsLog.Info("Staged VSIX not ready for deferred install; opening release page.");
-                        SetLastUpdateResult("Update package not yet downloaded; opened release page.");
                         OpenUrl(stagedRelease?.HtmlUrl);
                     }
                     break;
@@ -426,12 +374,11 @@ namespace SSMS_EnvTabs
             {
                 try
                 {
-                    SetLastUpdateResult("Preparing update package download.");
+                    EnvTabsLog.Info("Preparing update package download.");
                     string expectedSha256 = GetAssetSha256(vsixAsset);
                     if (string.IsNullOrWhiteSpace(expectedSha256))
                     {
                         EnvTabsLog.Info("Update install aborted: GitHub release digest missing or invalid.");
-                        SetLastUpdateResult("Update install aborted: missing or invalid GitHub release digest.");
                         OpenUrl(release.HtmlUrl);
                         return;
                     }
@@ -443,24 +390,21 @@ namespace SSMS_EnvTabs
                     if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
                     {
                         EnvTabsLog.Info($"Update install aborted: checksum mismatch. Expected={expectedSha256}, Actual={actualSha256}");
-                        SetLastUpdateResult("Update install aborted: checksum verification failed.");
                         OpenUrl(release.HtmlUrl);
                         return;
                     }
 
                     EnvTabsLog.Info("Update package checksum verified successfully.");
-                    SetLastUpdateResult("Update package verified. Launching installer.");
 
                     if (!LaunchVsixInstaller(tempPath))
                     {
-                        SetLastUpdateResult("Could not launch installer automatically; opened release page instead.");
+                        EnvTabsLog.Info("Could not launch installer automatically; opened release page instead.");
                         OpenUrl(release.HtmlUrl);
                     }
                 }
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Update install failed: {ex.Message}");
-                    SetLastUpdateResult($"Update install failed: {ex.Message}");
                     OpenUrl(release.HtmlUrl);
                 }
             });
@@ -486,12 +430,11 @@ namespace SSMS_EnvTabs
             {
                 try
                 {
-                    SetLastUpdateResult("Downloading update package in background.");
+                    EnvTabsLog.Info("Downloading update package in background.");
                     string expectedSha256 = GetAssetSha256(vsixAsset);
                     if (string.IsNullOrWhiteSpace(expectedSha256))
                     {
                         EnvTabsLog.Info("Stage download aborted: GitHub release digest missing or invalid.");
-                        SetLastUpdateResult("Update download failed: missing or invalid GitHub release digest.");
                         return;
                     }
 
@@ -502,18 +445,15 @@ namespace SSMS_EnvTabs
                     if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
                     {
                         EnvTabsLog.Info($"Stage download aborted: checksum mismatch. Expected={expectedSha256}, Actual={actualSha256}");
-                        SetLastUpdateResult("Update download failed: checksum verification failed.");
                         return;
                     }
 
                     ReplaceStagedVsixPath(tempPath);
                     EnvTabsLog.Info($"Update package staged at: {tempPath}");
-                    SetLastUpdateResult("Update package downloaded and verified. Ready to install.");
                 }
                 catch (Exception ex)
                 {
                     EnvTabsLog.Info($"Stage download failed: {ex.Message}");
-                    SetLastUpdateResult($"Update download failed: {ex.Message}");
                 }
             });
         }
@@ -538,7 +478,6 @@ namespace SSMS_EnvTabs
 
                 Process.Start(info);
                 EnvTabsLog.Info($"Launched VSIXInstaller: {installerPath} \"{vsixPath}\"");
-                SetLastUpdateResult("VSIXInstaller launched.");
                 return true;
             }
             catch (Exception ex)

@@ -44,28 +44,28 @@ namespace SSMS_EnvTabs
             return caption?.Trim() ?? string.Empty;
         }
 
+        internal static string SelectRenameSourceCaption(string frameCaption, string observedCaption, string reason)
+        {
+            return !string.IsNullOrWhiteSpace(observedCaption)
+                && reason != null
+                && reason.IndexOf("CaptionPoll", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? observedCaption
+                    : frameCaption;
+        }
+
         internal static string StripDirtyIndicators(string name)
         {
             if (string.IsNullOrEmpty(name)) return name ?? string.Empty;
 
             string s = name.Trim();
-            bool changed;
+            string prev;
             do
             {
-                changed = false;
-
-                while (s.EndsWith("*"))
-                {
-                    s = s.TrimEnd('*').TrimEnd();
-                    changed = true;
-                }
-
-                while (s.EndsWith("\u2B24"))
-                {
+                prev = s;
+                s = s.TrimEnd('*').TrimEnd();
+                if (s.EndsWith("\u2B24"))
                     s = s.Substring(0, s.Length - 1).TrimEnd();
-                    changed = true;
-                }
-            } while (changed);
+            } while (s != prev);
 
             return s;
         }
@@ -78,24 +78,16 @@ namespace SSMS_EnvTabs
             }
 
             string s = name.Trim();
-            bool changed;
+            string prev;
             do
             {
-                changed = false;
-
+                prev = s;
                 if (s.StartsWith(ExecutingToken, StringComparison.OrdinalIgnoreCase))
-                {
                     s = s.Substring(ExecutingToken.Length).TrimStart();
-                    changed = true;
-                }
-
                 string withoutSuffix = Regex.Replace(s, @"\s+-\s*Executing\.\.\.$", string.Empty, RegexOptions.IgnoreCase);
                 if (!string.Equals(withoutSuffix, s, StringComparison.Ordinal))
-                {
                     s = withoutSuffix.TrimEnd();
-                    changed = true;
-                }
-            } while (changed);
+            } while (s != prev);
 
             return s;
         }

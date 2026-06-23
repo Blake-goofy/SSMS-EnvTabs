@@ -159,6 +159,28 @@ namespace SSMS_EnvTabs.Tests
         }
 
         [TestMethod]
+        public void SelectRenameSourceCaption_UsesObservedCaptionForCaptionPoll()
+        {
+            string selected = TabCaptionFormatter.SelectRenameSourceCaption(
+                "Local model",
+                "1xf1xih1..sql \u2B24",
+                "CaptionPoll");
+
+            Assert.AreEqual("1xf1xih1..sql \u2B24", selected);
+        }
+
+        [TestMethod]
+        public void SelectRenameSourceCaption_KeepsFrameCaptionForOtherReasons()
+        {
+            string selected = TabCaptionFormatter.SelectRenameSourceCaption(
+                "Local model",
+                "1xf1xih1..sql \u2B24",
+                "ConnectionPoll");
+
+            Assert.AreEqual("Local model", selected);
+        }
+
+        [TestMethod]
         public void StripSqlExtension_CaseInsensitive()
         {
             Assert.AreEqual("file", TabCaptionFormatter.StripSqlExtension("file.SQL", true));

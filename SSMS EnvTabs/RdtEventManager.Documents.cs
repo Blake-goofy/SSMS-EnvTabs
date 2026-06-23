@@ -20,15 +20,8 @@ namespace SSMS_EnvTabs
     {
         private const string IndicatorTypeName = "Indicator";
         private const string IndicatorTypeFullName = "Microsoft.VisualStudio.Shell.Controls.Indicator";
-        private static readonly string[] PreferredTextViewMarginNames = new[]
-        {
-            "Glyph",
-            "LineNumber",
-            "LeftSelection",
-            "Indicator",
-            "SpacerMargin"
-        };
-        private static readonly string[] IndicatorBrushPropertyNames = new[] { "Background", "BorderBrush", "Foreground", "Fill", "Stroke" };
+        private static readonly string[] indicatorBrushPropertyNames = { "Background", "BorderBrush", "Foreground", "Fill", "Stroke" };
+        private static readonly string[] editorMarginNames = { "Glyph", "LineNumber", "LeftSelection", "Indicator", "SpacerMargin" };
         private static readonly ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController> statusStripColorControllers = new ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController>();
         private static readonly ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot> originalIndicatorBrushState = new ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot>();
 
@@ -675,7 +668,7 @@ namespace SSMS_EnvTabs
             {
                 properties.Clear();
 
-                foreach (string propertyName in IndicatorBrushPropertyNames)
+                foreach (string propertyName in indicatorBrushPropertyNames)
                 {
                     DependencyProperty dependencyProperty = FindDependencyProperty(target.GetType(), propertyName);
                     if (dependencyProperty != null)
@@ -741,20 +734,9 @@ namespace SSMS_EnvTabs
         private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
         {
             public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
-
-            private ReferenceEqualityComparer()
-            {
-            }
-
-            public new bool Equals(object x, object y)
-            {
-                return ReferenceEquals(x, y);
-            }
-
-            public int GetHashCode(object obj)
-            {
-                return obj == null ? 0 : RuntimeHelpers.GetHashCode(obj);
-            }
+            private ReferenceEqualityComparer() { }
+            public new bool Equals(object x, object y) => ReferenceEquals(x, y);
+            public int GetHashCode(object obj) => obj == null ? 0 : RuntimeHelpers.GetHashCode(obj);
         }
 
         private static Brush BuildIndicatorBrush(int colorIndex)
@@ -1360,7 +1342,7 @@ namespace SSMS_EnvTabs
             {
                 TryAddUniqueRoot(textViewHost.HostControl, roots);
 
-                foreach (string marginName in PreferredTextViewMarginNames)
+                foreach (string marginName in editorMarginNames)
                 {
                     try
                     {

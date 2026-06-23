@@ -16,27 +16,23 @@ namespace SSMS_EnvTabs
 {
     internal sealed partial class RdtEventManager
     {
-        private void OnAutoConfigDialogClosed(AutoConfigurationService.DialogClosedInfo info)
+        private void OnAutoConfigDialogClosed(System.Windows.Forms.DialogResult result, string server, string database, bool changesApplied)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            string reason = info == null
-                ? "DialogClosed"
-                : $"Result={info.Result}, Server={info.Server}, Database={info.Database}, ChangesApplied={info.ChangesApplied}";
+            LogColorSnapshot($"Result={result}, Server={server}, Database={database}, ChangesApplied={changesApplied}");
 
-            LogColorSnapshot(reason);
-
-            if (info != null && info.Result == System.Windows.Forms.DialogResult.Cancel)
+            if (result == System.Windows.Forms.DialogResult.Cancel)
             {
                 // The auto-configure dialog was cancelled. The rule was already saved with
                 // GroupName=null/ColorIndex=null to suppress future prompts, so color clears on
                 // its own when the config reloads. However, the tab rename must be explicitly
                 // reverted here because ReloadAndApplyConfig skips tabs that have no matching group.
-                RevertRenamedTabsForServer(info.Server);
+                RevertRenamedTabsForServer(server);
                 UpdateColorOnly("DialogClosed:Cancel", force: true);
                 suppressColorUpdatesUntilUtc = DateTime.UtcNow.AddSeconds(2);
             }
-            else if (info != null && !info.ChangesApplied)
+            else if (!changesApplied)
             {
                 UpdateColorOnly("DialogClosed", force: true);
                 // Avoid immediately overwriting regex with a partial snapshot after dialog close.
