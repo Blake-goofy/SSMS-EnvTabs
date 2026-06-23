@@ -20,6 +20,8 @@ namespace SSMS_EnvTabs
     {
         private const string IndicatorTypeName = "Indicator";
         private const string IndicatorTypeFullName = "Microsoft.VisualStudio.Shell.Controls.Indicator";
+        private static readonly string[] indicatorBrushPropertyNames = { "Background", "BorderBrush", "Foreground", "Fill", "Stroke" };
+        private static readonly string[] editorMarginNames = { "Glyph", "LineNumber", "LeftSelection", "Indicator", "SpacerMargin" };
         private static readonly ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController> statusStripColorControllers = new ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController>();
         private static readonly ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot> originalIndicatorBrushState = new ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot>();
 
@@ -666,7 +668,7 @@ namespace SSMS_EnvTabs
             {
                 properties.Clear();
 
-                foreach (string propertyName in new[] { "Background", "BorderBrush", "Foreground", "Fill", "Stroke" })
+                foreach (string propertyName in indicatorBrushPropertyNames)
                 {
                     DependencyProperty dependencyProperty = FindDependencyProperty(target.GetType(), propertyName);
                     if (dependencyProperty != null)
@@ -1340,7 +1342,7 @@ namespace SSMS_EnvTabs
             {
                 TryAddUniqueRoot(textViewHost.HostControl, roots);
 
-                foreach (string marginName in new[] { "Glyph", "LineNumber", "LeftSelection", "Indicator", "SpacerMargin" })
+                foreach (string marginName in editorMarginNames)
                 {
                     try
                     {

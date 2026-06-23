@@ -100,7 +100,15 @@ namespace SSMS_EnvTabs
             if (!config.Settings.EnableConfigurePrompt)
             {
                 // Silent mode: save the rule immediately with the suggested defaults.
-                AddRuleAndSave(config, server, database, useDb, suggestedName, nextColor, null, null);
+                AddRuleAndSave(
+                    config: config,
+                    server: server,
+                    database: database,
+                    useDb: useDb,
+                    groupName: suggestedName,
+                    colorIndex: nextColor,
+                    enableLineIndicatorColor: null,
+                    enableStatusBarColor: null);
                 return;
             }
 
@@ -165,7 +173,15 @@ namespace SSMS_EnvTabs
                             config.ServerAliases[server] = dlg.ServerAlias;
                         }
 
-                        newRule = AddRuleAndSave(config, server, database, useDb, updatedName, updatedColor, dlg.EnableLineIndicatorColor, dlg.EnableStatusBarColor);
+                        newRule = AddRuleAndSave(
+                            config: config,
+                            server: server,
+                            database: database,
+                            useDb: useDb,
+                            groupName: updatedName,
+                            colorIndex: updatedColor,
+                            enableLineIndicatorColor: dlg.EnableLineIndicatorColor,
+                            enableStatusBarColor: dlg.EnableStatusBarColor);
                         changesApplied = true;
 
                         if (result == DialogResult.Yes)
@@ -177,7 +193,15 @@ namespace SSMS_EnvTabs
                     {
                         // Save a silent null rule to suppress future auto-configure prompts
                         // for this connection without renaming or coloring the tab.
-                        newRule = AddRuleAndSave(config, server, database, useDb, null, null, null, null);
+                        newRule = AddRuleAndSave(
+                            config: config,
+                            server: server,
+                            database: database,
+                            useDb: useDb,
+                            groupName: null,
+                            colorIndex: null,
+                            enableLineIndicatorColor: null,
+                            enableStatusBarColor: null);
                         changesApplied = true;
                     }
 

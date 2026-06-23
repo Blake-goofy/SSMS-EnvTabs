@@ -198,7 +198,7 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private bool HandlePotentialChange(uint docCookie, IVsWindowFrame frame, string reason)
+        private bool HandlePotentialChange(uint docCookie, IVsWindowFrame frame, string reason, string observedCaption = null)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             
@@ -233,7 +233,7 @@ namespace SSMS_EnvTabs
 
             if (frame != null && config.Settings?.EnableAutoRename != false)
             {
-                string caption = TryReadFrameCaption(frame);
+                string caption = TabCaptionFormatter.SelectRenameSourceCaption(TryReadFrameCaption(frame), observedCaption, reason);
                 string moniker = frameMoniker;
 
                 if (IsExecutingCaption(caption))
@@ -607,7 +607,7 @@ namespace SSMS_EnvTabs
                     if (!IsExecutingCaption(caption))
                     {
                         EnvTabsLog.Verbose($"CaptionPoll: Detected caption change. Cookie={doc.Cookie}, Caption='{caption}'");
-                        bool done = HandlePotentialChange(doc.Cookie, doc.Frame, "CaptionPoll");
+                        bool done = HandlePotentialChange(doc.Cookie, doc.Frame, "CaptionPoll", caption);
                         if (!done)
                         {
                             ScheduleRenameRetry(doc.Cookie, "CaptionPoll");

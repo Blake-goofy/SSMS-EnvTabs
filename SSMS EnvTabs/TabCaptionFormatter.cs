@@ -44,6 +44,15 @@ namespace SSMS_EnvTabs
             return caption?.Trim() ?? string.Empty;
         }
 
+        internal static string SelectRenameSourceCaption(string frameCaption, string observedCaption, string reason)
+        {
+            return !string.IsNullOrWhiteSpace(observedCaption)
+                && reason != null
+                && reason.IndexOf("CaptionPoll", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? observedCaption
+                    : frameCaption;
+        }
+
         internal static string StripDirtyIndicators(string name)
         {
             if (string.IsNullOrEmpty(name)) return name ?? string.Empty;
