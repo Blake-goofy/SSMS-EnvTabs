@@ -82,55 +82,20 @@ jobs:
 
   publish:
     name: Publish to SSMS Gallery
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.repository_owner == 'Blake-goofy' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     needs: build
     runs-on: windows-latest
 
     steps:
-      - name: Check publish configuration
-        id: publish_gate
-        shell: pwsh
-        env:
-          VSIX_GALLERY_MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:VSIX_GALLERY_MANAGE_TOKEN)) {
-            "enabled=false" >> $env:GITHUB_OUTPUT
-            "VSIX_GALLERY_MANAGE_TOKEN is not set. Skipping SSMS Gallery publish." >> $env:GITHUB_STEP_SUMMARY
-          }
-          else {
-            "enabled=true" >> $env:GITHUB_OUTPUT
-          }
-
       - name: Download VSIX artifact
-        if: ${{ steps.publish_gate.outputs.enabled == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: ${{ env.ArtifactName }}
           path: artifacts
 
       - name: Upload to Open SSMS VSIX Gallery
-        if: ${{ steps.publish_gate.outputs.enabled == 'true' }}
-        shell: bash
-        env:
-          VSIX_GALLERY_MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
-          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-          ISSUE_TRACKER_URL: ${{ github.server_url }}/${{ github.repository }}/issues
-          README_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/README.md
-        run: |
-          encode() { python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
-
-          upload_url="https://ssmsgallery.azurewebsites.net/api/upload?repo=$(encode "$REPOSITORY_URL")&issuetracker=$(encode "$ISSUE_TRACKER_URL")&readmeUrl=$(encode "$README_URL")"
-
-          curl_args=(--silent --show-error --fail-with-body -F "file=@artifacts/SSMS EnvTabs.vsix")
-
-          if [ -n "$VSIX_GALLERY_MANAGE_TOKEN" ]; then
-            echo "::add-mask::$VSIX_GALLERY_MANAGE_TOKEN"
-            curl_args+=(-H "X-Manage-Token: $VSIX_GALLERY_MANAGE_TOKEN")
-          fi
-
-          result=$(curl "${curl_args[@]}" "$upload_url")
-          echo "Upload successful"
-
-          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
-            UPLOAD_JSON="$result" python3 -c 'import json, os; data = json.loads(os.environ["UPLOAD_JSON"]); url = data.get("url") or data.get("Url"); manage_url = data.get("manageUrl") or data.get("ManageUrl"); print(f"Published extension: {url}") if url else None; print(f"Manage extension: {manage_url}") if manage_url else None' >> "$GITHUB_STEP_SUMMARY" || true
-          fi
+        uses: madskristensen/publish-vsixgallery@v1
+        with:
+          vsix-file: artifacts/SSMS EnvTabs.vsix
+          gallery-url: https://ssmsgallery.azurewebsites.net
+          manage-token: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}
