@@ -10,7 +10,7 @@ namespace SSMS_EnvTabs
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [ProvideAutoLoad(UIContextGuids.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(UIContextGuids.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
-    [ProvideMenuResource("Menus.ctmenu", 1)]
+    [ProvideMenuResource("Menus.ctmenu", 2)]
     [ProvideToolWindow(typeof(SettingsToolWindow))]
     [Guid(SSMS_EnvTabsPackage.PackageGuidString)]
     public sealed class SSMS_EnvTabsPackage : AsyncPackage
