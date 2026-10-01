@@ -476,7 +476,8 @@ namespace SSMS_EnvTabs
                 IsEditMode = true,
                 UsedColorIndexes = usedColorIndexes,
                 InitialLineIndicatorColor = matchedRule.EnableLineIndicatorColor ?? config.Settings?.InitialLineIndicatorColor ?? true,
-                InitialStatusBarColor = matchedRule.EnableStatusBarColor ?? config.Settings?.InitialStatusBarColor ?? true
+                InitialStatusBarColor = matchedRule.EnableStatusBarColor ?? config.Settings?.InitialStatusBarColor ?? true,
+                InitialEditorTint = matchedRule.EnableEditorTint ?? config.Settings?.InitialEditorTint ?? true
             };
 
             using (var dlg = new NewRuleDialog(dialogOptions))
@@ -514,6 +515,12 @@ namespace SSMS_EnvTabs
                     if (dlg.EnableStatusBarColor != matchedRule.EnableStatusBarColor)
                     {
                         matchedRule.EnableStatusBarColor = dlg.EnableStatusBarColor;
+                        configChanged = true;
+                    }
+
+                    if (dlg.EnableEditorTint != matchedRule.EnableEditorTint)
+                    {
+                        matchedRule.EnableEditorTint = dlg.EnableEditorTint;
                         configChanged = true;
                     }
 
@@ -1023,6 +1030,7 @@ namespace SSMS_EnvTabs
                 {
                     bool lineIndicatorResolved = TryApplyLineIndicatorColor(doc.Cookie, doc.Frame, doc.Moniker, rules, manualRules, settings);
                     TryApplyStatusBarColor(doc.Cookie, doc.Frame, doc.Moniker, rules, manualRules, settings);
+                    lineIndicatorResolved &= TryApplyEditorTint(doc.Cookie, doc.Frame, doc.Moniker, rules, manualRules, settings);
 
                     if (!lineIndicatorResolved)
                     {

@@ -12,6 +12,7 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 ## Key Features
 
 - **Color-Coded Tabs** - 16 distinct colors to visually separate different environments
+- **Editor Tint** - Gently blend the group color into the query editor background (`initialEditorTint` / per-group `enableEditorTint`, intensity via `editorTintStrength`, 1-30%, default 8)
 - **Tab Renaming** - Automatically name query tabs with environment names (e.g., "1. Prod", "1. QA")
 - **Auto-Configuration** - Automatically create rules for new connections (retained between sessions)
 - **Manual-Regex** - Add your own regex that you want applied to the ColorByRegexConfig.txt file (retained between sessions)

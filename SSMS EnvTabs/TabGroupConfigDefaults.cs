@@ -76,7 +76,9 @@ namespace SSMS_EnvTabs
                     SavedFileRenameStyle = "[filename]",
                     EnableRemoveDotSql = true,
                     InitialLineIndicatorColor = true,
-                    InitialStatusBarColor = true
+                    InitialStatusBarColor = true,
+                    InitialEditorTint = true,
+                    EditorTintStrength = EditorTint.DefaultStrength
                 }
             };
         }
@@ -105,7 +107,9 @@ namespace SSMS_EnvTabs
                 SavedFileRenameStyle = settings.SavedFileRenameStyle,
                 EnableRemoveDotSql = settings.EnableRemoveDotSql,
                 InitialLineIndicatorColor = settings.InitialLineIndicatorColor,
-                InitialStatusBarColor = settings.InitialStatusBarColor
+                InitialStatusBarColor = settings.InitialStatusBarColor,
+                InitialEditorTint = settings.InitialEditorTint,
+                EditorTintStrength = settings.EditorTintStrength
             };
         }
 

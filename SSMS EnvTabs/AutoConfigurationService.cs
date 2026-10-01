@@ -108,7 +108,8 @@ namespace SSMS_EnvTabs
                     groupName: suggestedName,
                     colorIndex: nextColor,
                     enableLineIndicatorColor: null,
-                    enableStatusBarColor: null);
+                    enableStatusBarColor: null,
+                    enableEditorTint: null);
                 return;
             }
 
@@ -136,7 +137,8 @@ namespace SSMS_EnvTabs
                     HideGroupNameRow = !enableAutoRename,
                     UsedColorIndexes = usedColorIndexes,
                     InitialLineIndicatorColor = config.Settings?.InitialLineIndicatorColor ?? true,
-                    InitialStatusBarColor = config.Settings?.InitialStatusBarColor ?? true
+                    InitialStatusBarColor = config.Settings?.InitialStatusBarColor ?? true,
+                    InitialEditorTint = config.Settings?.InitialEditorTint ?? true
                 };
 
                 using (var dlg = new NewRuleDialog(dialogOptions))
@@ -181,7 +183,8 @@ namespace SSMS_EnvTabs
                             groupName: updatedName,
                             colorIndex: updatedColor,
                             enableLineIndicatorColor: dlg.EnableLineIndicatorColor,
-                            enableStatusBarColor: dlg.EnableStatusBarColor);
+                            enableStatusBarColor: dlg.EnableStatusBarColor,
+                            enableEditorTint: dlg.EnableEditorTint);
                         changesApplied = true;
 
                         if (result == DialogResult.Yes)
@@ -201,7 +204,8 @@ namespace SSMS_EnvTabs
                             groupName: null,
                             colorIndex: null,
                             enableLineIndicatorColor: null,
-                            enableStatusBarColor: null);
+                            enableStatusBarColor: null,
+                            enableEditorTint: null);
                         changesApplied = true;
                     }
 
@@ -231,7 +235,7 @@ namespace SSMS_EnvTabs
             }
         }
 
-        private static TabGroupRule AddRuleAndSave(TabGroupConfig config, string server, string database, bool useDb, string groupName, int? colorIndex, bool? enableLineIndicatorColor, bool? enableStatusBarColor)
+        private static TabGroupRule AddRuleAndSave(TabGroupConfig config, string server, string database, bool useDb, string groupName, int? colorIndex, bool? enableLineIndicatorColor, bool? enableStatusBarColor, bool? enableEditorTint)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -266,7 +270,8 @@ namespace SSMS_EnvTabs
                 Priority = 10,
                 ColorIndex = colorIndex,
                 EnableLineIndicatorColor = enableLineIndicatorColor,
-                EnableStatusBarColor = enableStatusBarColor
+                EnableStatusBarColor = enableStatusBarColor,
+                EnableEditorTint = enableEditorTint
             };
 
             config.ConnectionGroups.Add(newRule);

@@ -19,5 +19,6 @@
     <Compile Include="..\..\SSMS EnvTabs\TabRuleMatcher.cs" Link="Source\TabRuleMatcher.cs" />
     <Compile Include="..\..\SSMS EnvTabs\TabGroupColorSolver.cs" Link="Source\TabGroupColorSolver.cs" />
     <Compile Include="..\..\SSMS EnvTabs\TabCaptionFormatter.cs" Link="Source\TabCaptionFormatter.cs" />
+    <Compile Include="..\..\SSMS EnvTabs\EditorTint.cs" Link="Source\EditorTint.cs" />
   </ItemGroup>
 </Project>

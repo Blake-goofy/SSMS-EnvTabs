@@ -673,6 +673,19 @@
                         </Grid>
                         <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
 
+                        <Grid Style="{StaticResource OptionRowGridStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" MaxWidth="500">
+                                <TextBlock Style="{StaticResource OptionTitleStyle}" Text="Default: Tint editor background" />
+                                <TextBlock Style="{StaticResource OptionDescriptionStyle}" Text="Blends a subtle amount of the group color into the query editor background. Each group can override this in its own settings. Adjust intensity with editorTintStrength in the JSON config." />
+                            </StackPanel>
+                            <CheckBox Grid.Column="1" x:Name="EditorTintToggle" Style="{StaticResource SwitchToggleStyle}" />
+                        </Grid>
+                        <Separator Style="{StaticResource OptionRowSeparatorStyle}" />
+
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

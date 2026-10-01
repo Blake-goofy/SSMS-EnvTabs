@@ -24,7 +24,7 @@ namespace SSMS_EnvTabs.Tests
             var migrated = TabGroupConfigDefaults.ApplyMissingSettingDefaults(config, json, defaultConfig);
 
             CollectionAssert.AreEquivalent(
-                new[] { "enableVerboseLogging", "enableAutoRename", "enableAutoColor", "enableConfigurePrompt", "enableConnectionPolling", "enableColorWarning", "enableServerAliasPrompt", "enableUpdateChecks", "autoConfigure", "newQueryRenameStyle", "suggestedGroupNameStyle", "savedFileRenameStyle", "initialLineIndicatorColor", "initialStatusBarColor" },
+                new[] { "enableVerboseLogging", "enableAutoRename", "enableAutoColor", "enableConfigurePrompt", "enableConnectionPolling", "enableColorWarning", "enableServerAliasPrompt", "enableUpdateChecks", "autoConfigure", "newQueryRenameStyle", "suggestedGroupNameStyle", "savedFileRenameStyle", "initialLineIndicatorColor", "initialStatusBarColor", "initialEditorTint", "editorTintStrength" },
                 migrated.ToArray());
             Assert.IsTrue(config.Settings.InitialLineIndicatorColor);
             Assert.IsTrue(config.Settings.InitialStatusBarColor);
@@ -67,7 +67,7 @@ namespace SSMS_EnvTabs.Tests
 
             var migrated = TabGroupConfigDefaults.ApplyMissingSettingDefaults(config, json, defaultConfig);
 
-            Assert.AreEqual(16, migrated.Count);
+            Assert.AreEqual(18, migrated.Count);
             Assert.IsNotNull(config.Settings);
             Assert.IsTrue(config.Settings.EnableAutoColor);
             Assert.IsTrue(config.Settings.InitialLineIndicatorColor);

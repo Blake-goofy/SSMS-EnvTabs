@@ -18,7 +18,9 @@
     "savedFileRenameStyle": "[filename]",
     "enableRemoveDotSql": true,
     "initialLineIndicatorColor": true,
-    "initialStatusBarColor": true
+    "initialStatusBarColor": true,
+    "initialEditorTint": true,
+    "editorTintStrength": 8
   },
   "manualRegexLines": null,
   "serverAlias": {
@@ -32,7 +34,8 @@
       "priority": 10,
       "colorIndex": 9,
       "enableLineIndicatorColor": true,
-      "enableStatusBarColor": true
+      "enableStatusBarColor": true,
+      "enableEditorTint": true
     }
   ]
 }
