@@ -138,7 +138,7 @@ namespace SSMS_EnvTabs
                     UsedColorIndexes = usedColorIndexes,
                     InitialLineIndicatorColor = config.Settings?.InitialLineIndicatorColor ?? true,
                     InitialStatusBarColor = config.Settings?.InitialStatusBarColor ?? true,
-                    InitialEditorTint = config.Settings?.InitialEditorTint ?? true
+                    InitialEditorTint = config.Settings?.InitialEditorTint ?? false
                 };
 
                 using (var dlg = new NewRuleDialog(dialogOptions))

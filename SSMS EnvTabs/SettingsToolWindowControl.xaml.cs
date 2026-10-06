@@ -79,6 +79,7 @@ namespace SSMS_EnvTabs
         private bool showServerAliasSection = true;
         private bool showGroupNameInConnectionCards = true;
         private string currentAutoConfigureMode = DefaultAutoConfigureValue;
+        private int editorTintStrength = EditorTint.DefaultStrength;
         private int nextInlineRowId = 1;
         private bool isThemeEventSubscribed;
         private ServerAliasRowState activeAliasEditRow;
@@ -168,7 +169,7 @@ namespace SSMS_EnvTabs
         private const bool DefaultEnableRemoveDotSql = true;
         private const bool DefaultInitialLineIndicatorColor = true;
         private const bool DefaultInitialStatusBarColor = true;
-        private const bool DefaultInitialEditorTint = true;
+        private const bool DefaultInitialEditorTint = false;
         private const string DefaultSuggestedGroupNameStyle = "[serverAlias] [db]";
         private const string DefaultNewQueryRenameStyle = "[#]. [groupName]";
         private const string DefaultSavedFileRenameStyle = "[filename]";
@@ -1504,6 +1505,7 @@ namespace SSMS_EnvTabs
             ThreadHelper.ThrowIfNotOnUIThread();
 
             var settings = config?.Settings ?? new TabGroupSettings();
+            editorTintStrength = settings.EditorTintStrength;
             showGroupNameInConnectionCards = settings.EnableAutoRename;
             showServerAliasSection = settings.EnableServerAliasPrompt && settings.EnableAutoRename;
             currentAutoConfigureMode = NormalizeAutoConfigure(settings.AutoConfigure);
@@ -2015,7 +2017,7 @@ namespace SSMS_EnvTabs
                 .OrderBy(c => c.Priority)
                 .ThenBy(c => c.GroupName ?? string.Empty, StringComparer.OrdinalIgnoreCase))
             {
-                Brush cardSurface = TryFindResource("EnvTabsBackgroundBrush") as Brush ?? Brushes.White;
+                Brush cardSurface = ResolveConnectionGroupBackground(card.EnableEditorTint ?? (editorTintToggle.IsChecked == true), card.ColorIndex);
                 Brush cardForeground = ResolveReadableForegroundBrush(cardSurface);
                 Brush swatchFill = ResolveColorSwatchFillBrush(card.ColorIndex);
                 Brush swatchBorder = ResolveColorSwatchBorderBrush(card.ColorIndex);
@@ -2028,7 +2030,7 @@ namespace SSMS_EnvTabs
                     Margin = new Thickness(0, 0, 0, 6)
                 };
                 cardBorder.SetResourceReference(Border.BorderBrushProperty, "EnvTabsBorderBrush");
-                cardBorder.SetResourceReference(Border.BackgroundProperty, "EnvTabsBackgroundBrush");
+                cardBorder.Background = cardSurface;
 
                 Grid grid = new Grid();
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -2143,6 +2145,13 @@ namespace SSMS_EnvTabs
                     editorTintCheckBox.SetResourceReference(Control.ForegroundProperty, "EnvTabsForegroundBrush");
                     checkboxPanel.Children.Add(editorTintCheckBox);
                     fieldsPanel.Children.Add(checkboxPanel);
+
+                    // ponytail: preview unsaved choices locally; Save/Cancel still owns the group state.
+                    RoutedEventHandler updateTint = (s, e) => cardBorder.Background = ResolveConnectionGroupBackground(
+                        editorTintCheckBox.IsChecked == true, colorCombo.SelectedValue as int?);
+                    editorTintCheckBox.Checked += updateTint;
+                    editorTintCheckBox.Unchecked += updateTint;
+                    colorCombo.SelectionChanged += (s, e) => updateTint(s, e);
 
                     StackPanel actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
 
@@ -2514,6 +2523,27 @@ namespace SSMS_EnvTabs
             }
 
             return "Group";
+        }
+
+        private Brush ResolveConnectionGroupBackground(bool tintEnabled, int? colorIndex)
+        {
+            Brush background = TryFindResource("EnvTabsBackgroundBrush") as Brush ?? SystemColors.WindowBrush;
+            if (!tintEnabled || autoColorToggle.IsChecked != true || SystemParameters.HighContrast
+                || !colorIndex.HasValue || colorIndex.Value < 0 || colorIndex.Value >= ColorPalette.Hex.Length
+                || !(background is SolidColorBrush baseBrush))
+            {
+                return background;
+            }
+
+            Color baseColor = baseBrush.Color;
+            Color tint = (Color)ColorConverter.ConvertFromString(ColorPalette.Hex[colorIndex.Value]);
+            int blended = EditorTint.Blend(
+                (baseColor.R << 16) | (baseColor.G << 8) | baseColor.B,
+                (tint.R << 16) | (tint.G << 8) | tint.B,
+                editorTintStrength);
+            var brush = new SolidColorBrush(Color.FromArgb(baseColor.A, (byte)(blended >> 16), (byte)(blended >> 8), (byte)blended));
+            brush.Freeze();
+            return brush;
         }
 
         private Brush ResolveColorSwatchFillBrush(int? colorIndex)

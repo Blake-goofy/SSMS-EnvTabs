@@ -97,7 +97,7 @@ namespace SSMS_EnvTabs
         public bool InitialStatusBarColor { get; set; } = true;
 
         [DataMember(Name = "initialEditorTint", IsRequired = false, Order = 15)]
-        public bool InitialEditorTint { get; set; } = true;
+        public bool InitialEditorTint { get; set; } = false;
 
         // Percent of the group color blended into the editor background (clamped by EditorTint).
         [DataMember(Name = "editorTintStrength", IsRequired = false, Order = 16)]

@@ -77,7 +77,7 @@ namespace SSMS_EnvTabs
                     EnableRemoveDotSql = true,
                     InitialLineIndicatorColor = true,
                     InitialStatusBarColor = true,
-                    InitialEditorTint = true,
+                    InitialEditorTint = false,
                     EditorTintStrength = EditorTint.DefaultStrength
                 }
             };

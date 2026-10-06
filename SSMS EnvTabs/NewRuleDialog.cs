@@ -106,7 +106,7 @@ namespace SSMS_EnvTabs
             public IEnumerable<int> UsedColorIndexes { get; set; }
             public bool InitialLineIndicatorColor { get; set; } = true;
             public bool InitialStatusBarColor { get; set; } = true;
-            public bool InitialEditorTint { get; set; } = true;
+            public bool InitialEditorTint { get; set; } = false;
         }
 
         public NewRuleDialog(NewRuleDialogOptions options)
