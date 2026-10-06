@@ -19,6 +19,10 @@
       <Group guid="guidSSMS_EnvTabsCmdSet" id="EnvTabsGroup" priority="0x0600">
         <Parent guid="guidSSMS_EnvTabsCmdSet" id="EnvTabs"/>
       </Group>
+      <!-- Document tab right-click menu (the one with "Set Tab Color"). -->
+      <Group guid="guidSSMS_EnvTabsCmdSet" id="EnvTabsDocTabContextGroup" priority="0x0700">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_EZDOCWINTAB"/>
+      </Group>
     </Groups>
 
     <Buttons>
@@ -42,6 +46,15 @@
           <ToolTipText>Edit group name and color for the active connection</ToolTipText>
         </Strings>
       </Button>
+      <Button guid="guidSSMS_EnvTabsCmdSet" id="cmdidOpenConfigFromDocTab" priority="0x0100" type="Button">
+        <Parent guid="guidSSMS_EnvTabsCmdSet" id="EnvTabsDocTabContextGroup" />
+        <Icon guid="ImageCatalogGuid" id="Settings" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>EnvTabs Settings...</ButtonText>
+          <ToolTipText>Opens the EnvTabs configuration window</ToolTipText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -50,9 +63,11 @@
     <GuidSymbol name="guidSSMS_EnvTabsCmdSet" value="{2E302824-2C62-4275-801B-55919612C26D}">
       <IDSymbol name="EnvTabs" value="0x1000" />
       <IDSymbol name="EnvTabsGroup" value="0x1050" />
+      <IDSymbol name="EnvTabsDocTabContextGroup" value="0x1060" />
       <IDSymbol name="cmdidOpenConfig" value="0x0103" />
       <IDSymbol name="cmdidCheckUpdates" value="0x0104" />
       <IDSymbol name="cmdidEditActiveConnectionRule" value="0x0105" />
+      <IDSymbol name="cmdidOpenConfigFromDocTab" value="0x0106" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>

@@ -14,6 +14,7 @@ namespace SSMS_EnvTabs
         internal const int TargetTabConnectionGroups = 2;
 
         public const int CommandId = 0x0103;
+        public const int DocTabContextCommandId = 0x0106;
         public static readonly Guid CommandSet = SSMS_EnvTabsPackage.PackageCmdSetGuid;
 
         private readonly AsyncPackage package;
@@ -26,6 +27,10 @@ namespace SSMS_EnvTabs
             var menuCommandID = new CommandID(CommandSet, CommandId);
             var menuItem = new MenuCommand(this.Execute, menuCommandID);
             commandService.AddCommand(menuItem);
+
+            // Same action from the document tab right-click menu.
+            var docTabCommandID = new CommandID(CommandSet, DocTabContextCommandId);
+            commandService.AddCommand(new MenuCommand(this.Execute, docTabCommandID));
         }
 
         public static async Task InitializeAsync(AsyncPackage package)

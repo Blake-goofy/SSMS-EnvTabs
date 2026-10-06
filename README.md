@@ -12,6 +12,7 @@ A Visual Studio Extension for SQL Server Management Studio (SSMS) that automatic
 ## Key Features
 
 - **Color-Coded Tabs** - 16 distinct colors to visually separate different environments
+- **Editor Tint** - Optionally blend the group color into the query editor background (off by default, `initialEditorTint` / per-group `enableEditorTint`, intensity via `editorTintStrength`, 1-30%, default 8). The Connection Groups tab previews enabled tints.
 - **Tab Renaming** - Automatically name query tabs with environment names (e.g., "1. Prod", "1. QA")
 - **Auto-Configuration** - Automatically create rules for new connections (retained between sessions)
 - **Manual-Regex** - Add your own regex that you want applied to the ColorByRegexConfig.txt file (retained between sessions)
@@ -36,6 +37,16 @@ Full documentation is available in the [Wiki](https://github.com/Blake-goofy/SSM
 - **[Tab Appearance](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Tab-Appearance)**: In depth tab appearance guide.
 - **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)**: List of available colors (0-15).
 - **[How it Works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)**: Technical details.
+
+## Releasing
+
+After these workflows are merged into `main`:
+
+1. Run **Actions > Pre-release > Run workflow** on the branch to release. It builds, tests, and creates a GitHub pre-release tagged from the VSIX version, with an asset such as `SSMS_EnvTabs_2.3.0.vsix` and generated release notes.
+2. Edit that pre-release's notes, clear **Set as a pre-release**, and select **Set as the latest release** when ready. Keep its tag and VSIX asset.
+3. Run **Actions > Publish to SSMS Gallery > Run workflow** and enter the release tag, such as `v2.3.0`. It publishes the existing release asset and rejects drafts and pre-releases.
+
+Pushes and pull requests only build and test. Gallery publishing requires the `VSIX_GALLERY_MANAGE_TOKEN` repository secret and only runs when manually requested. Bump the version before creating the next pre-release; existing releases are not overwritten.
 
 ## Author
 

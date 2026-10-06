@@ -363,6 +363,7 @@ namespace SSMS_EnvTabs
                 {
                     lineIndicatorResolved = TryApplyLineIndicatorColor(docCookie, frame, frameMoniker, rules, manualRules, config.Settings);
                     TryApplyStatusBarColor(docCookie, frame, frameMoniker, rules, manualRules, config.Settings);
+                    lineIndicatorResolved &= TryApplyEditorTint(docCookie, frame, frameMoniker, rules, manualRules, config.Settings);
                 }
             }
             catch (Exception ex)
@@ -504,7 +505,9 @@ namespace SSMS_EnvTabs
                     lineIndicatorRetryCounts[docCookie] = i + 1;
                     EnvTabsLog.Verbose($"LineIndicatorRetry: Reason={reason}, Cookie={docCookie}, Attempt={i + 1}");
 
-                    if (TryApplyLineIndicatorColor(docCookie, frame, moniker, rules, manualRules, config.Settings))
+                    // The editor tint shares this retry loop since it waits on the same text view.
+                    bool tintResolved = TryApplyEditorTint(docCookie, frame, moniker, rules, manualRules, config.Settings);
+                    if (TryApplyLineIndicatorColor(docCookie, frame, moniker, rules, manualRules, config.Settings) && tintResolved)
                     {
                         lineIndicatorRetryCounts.Remove(docCookie);
                         return;
@@ -625,6 +628,7 @@ namespace SSMS_EnvTabs
             {
                 lastConnectionByCookie.Remove(cookie);
                 lastCaptionByCookie.Remove(cookie);
+                editorTintedCookies.Remove(cookie);
             }
         }
 

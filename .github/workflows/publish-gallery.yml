@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-workflow.json
+name: Publish to SSMS Gallery
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release tag (for example, v2.3.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ssms-gallery
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.repository_owner == 'Blake-goofy' }}
+    runs-on: windows-latest
+    steps:
+      - name: Download published release asset
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw 'Use a release tag such as v2.3.0.' }
+          $releaseJson = gh release view $env:RELEASE_TAG --json isDraft,isPrerelease,assets
+          if ($LASTEXITCODE -ne 0) { throw 'Could not find the selected release.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if ($release.isDraft -or $release.isPrerelease) { throw 'Promote the pre-release to a published release before publishing to the gallery.' }
+          $version = $env:RELEASE_TAG.Substring(1)
+          $assetName = "SSMS_EnvTabs_$version.vsix"
+          if ($assetName -notin $release.assets.name) { throw "Release asset missing: $assetName" }
+          gh release download $env:RELEASE_TAG --pattern $assetName --dir artifacts
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the release VSIX.' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path (Get-Location) "artifacts/$assetName"))
+          try {
+            $entry = $archive.GetEntry('extension.vsixmanifest')
+            if (!$entry) { throw 'VSIX manifest missing.' }
+            $reader = [IO.StreamReader]::new($entry.Open())
+            try { [xml]$manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if ($manifest.PackageManifest.Metadata.Identity.Version -ne $version) { throw 'VSIX version does not match the release tag.' }
+          } finally { $archive.Dispose() }
+          "asset-name=$assetName" >> $env:GITHUB_OUTPUT
+
+      - name: Upload to Open SSMS VSIX Gallery
+        uses: madskristensen/publish-vsixgallery@v1
+        with:
+          vsix-file: artifacts/${{ steps.release.outputs.asset-name }}
+          readme: https://raw.githubusercontent.com/${{ github.repository }}/${{ inputs.release_tag }}/README.md
+          gallery-url: https://ssmsgallery.azurewebsites.net
+          manage-token: ${{ secrets.VSIX_GALLERY_MANAGE_TOKEN }}

@@ -25,6 +25,7 @@ namespace SSMS_EnvTabs
         public string ServerAlias { get; private set; }
         public bool? EnableLineIndicatorColor { get; private set; }
         public bool? EnableStatusBarColor { get; private set; }
+        public bool? EnableEditorTint { get; private set; }
         public event Action<string> AliasConfirmed;
 
         private TextBox txtName;
@@ -41,6 +42,7 @@ namespace SSMS_EnvTabs
 
         private CheckBox chkLineIndicator;
         private CheckBox chkStatusBar;
+        private CheckBox chkEditorTint;
 
         private StackPanel panelRuleButtons;
         private StackPanel panelAliasButtons;
@@ -104,6 +106,7 @@ namespace SSMS_EnvTabs
             public IEnumerable<int> UsedColorIndexes { get; set; }
             public bool InitialLineIndicatorColor { get; set; } = true;
             public bool InitialStatusBarColor { get; set; } = true;
+            public bool InitialEditorTint { get; set; } = false;
         }
 
         public NewRuleDialog(NewRuleDialogOptions options)
@@ -429,6 +432,7 @@ namespace SSMS_EnvTabs
 
             if (chkLineIndicator != null) chkLineIndicator.Style = style;
             if (chkStatusBar != null) chkStatusBar.Style = style;
+            if (chkEditorTint != null) chkEditorTint.Style = style;
         }
 
         private static Style CreateCheckBoxStyle(Brush accentBrush, Brush checkmarkBrush, Brush borderBrush, Brush hoverBorderBrush)
@@ -876,12 +880,21 @@ namespace SSMS_EnvTabs
             {
                 Content = "Color the status bar",
                 IsChecked = options.InitialStatusBarColor,
-                Margin = new Thickness(2, 2, 0, 4)
+                Margin = new Thickness(2, 2, 0, 2)
             };
             chkStatusBar.SetResourceReference(Control.ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
 
+            chkEditorTint = new CheckBox
+            {
+                Content = "Tint the editor background",
+                IsChecked = options.InitialEditorTint,
+                Margin = new Thickness(2, 2, 0, 4)
+            };
+            chkEditorTint.SetResourceReference(Control.ForegroundProperty, EnvironmentColors.ToolWindowTextBrushKey);
+
             advancedContent.Children.Add(chkLineIndicator);
             advancedContent.Children.Add(chkStatusBar);
+            advancedContent.Children.Add(chkEditorTint);
 
             var toggleText = new TextBlock
             {
@@ -932,6 +945,7 @@ namespace SSMS_EnvTabs
                 }
                 EnableLineIndicatorColor = chkLineIndicator?.IsChecked;
                 EnableStatusBarColor = chkStatusBar?.IsChecked;
+                EnableEditorTint = chkEditorTint?.IsChecked;
                 dialogResult = WinFormsDialogResult.OK;
                 this.DialogResult = true;
             };
@@ -970,6 +984,7 @@ namespace SSMS_EnvTabs
                 }
                 EnableLineIndicatorColor = chkLineIndicator?.IsChecked;
                 EnableStatusBarColor = chkStatusBar?.IsChecked;
+                EnableEditorTint = chkEditorTint?.IsChecked;
                 OpenConfigRequested = true;
                 dialogResult = WinFormsDialogResult.Yes;
                 this.DialogResult = true;

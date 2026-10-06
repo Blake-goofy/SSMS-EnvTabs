@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-workflow.json
+name: Pre-release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  pre-release:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested VSIX
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.asset_name }}
+          path: artifacts
+
+      - name: Create GitHub pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          VERSION: ${{ needs.build.outputs.version }}
+          ASSET_NAME: ${{ needs.build.outputs.asset_name }}
+        run: |
+          gh release create "v$env:VERSION" "artifacts/$env:ASSET_NAME" `
+            --target $env:RELEASE_COMMIT --title "v$env:VERSION" `
+            --prerelease --latest=false --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to create pre-release; existing releases are not overwritten.' }
