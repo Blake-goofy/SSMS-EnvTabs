@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
+using Microsoft.VisualStudio.Threading;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -309,11 +310,24 @@ namespace SSMS_EnvTabs
                 }
 
                 reapplyQueued = true;
-                view.VisualElement.Dispatcher.BeginInvoke(new Action(() =>
+                var taskFactory = ThreadHelper.JoinableTaskFactory.WithPriority(view.VisualElement.Dispatcher, DispatcherPriority.Background);
+                _ = taskFactory.RunAsync(async () =>
                 {
-                    reapplyQueued = false;
-                    ApplyDesired();
-                }), DispatcherPriority.Background);
+                    try
+                    {
+                        // Yield even on the UI thread so the editor finishes resetting its theme first.
+                        await taskFactory.SwitchToMainThreadAsync(alwaysYield: true);
+                        ApplyDesired();
+                    }
+                    catch (Exception ex)
+                    {
+                        EnvTabsLog.Error($"EditorTint: background refresh failed: {ex.Message}");
+                    }
+                    finally
+                    {
+                        reapplyQueued = false;
+                    }
+                });
             }
 
             private bool IsAppliedBrush(Brush brush)

@@ -38,16 +38,6 @@ Full documentation is available in the [Wiki](https://github.com/Blake-goofy/SSM
 - **[Color Reference](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/Color-Reference)**: List of available colors (0-15).
 - **[How it Works](https://github.com/Blake-goofy/SSMS-EnvTabs/wiki/How-it-works)**: Technical details.
 
-## Releasing
-
-After these workflows are merged into `main`:
-
-1. Run **Actions > Pre-release > Run workflow** on the branch to release. It builds, tests, and creates a GitHub pre-release tagged from the VSIX version, with an asset such as `SSMS_EnvTabs_2.3.0.vsix` and generated release notes.
-2. Edit that pre-release's notes, clear **Set as a pre-release**, and select **Set as the latest release** when ready. Keep its tag and VSIX asset.
-3. Run **Actions > Publish to SSMS Gallery > Run workflow** and enter the release tag, such as `v2.3.0`. It publishes the existing release asset and rejects drafts and pre-releases.
-
-Pushes and pull requests only build and test. Gallery publishing requires the `VSIX_GALLERY_MANAGE_TOKEN` repository secret and only runs when manually requested. Bump the version before creating the next pre-release; existing releases are not overwritten.
-
 ## Author
 
 **Blake Becker**
