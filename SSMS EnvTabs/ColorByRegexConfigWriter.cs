@@ -36,6 +36,10 @@ namespace SSMS_EnvTabs
         private IReadOnlyList<TabRuleMatcher.CompiledRule> lastRulesSnapshot;
         private IReadOnlyList<TabRuleMatcher.CompiledManualRule> lastManualRulesSnapshot;
 
+        // Serializes background writes (they share a .tmp file); a queued write is skipped once a newer snapshot exists.
+        private readonly object writeLock = new object();
+        private int writeGeneration;
+
         public event Action<string> ConfigPathResolved;
 
         public void UpdateFromSnapshot(IEnumerable<RdtEventManager.OpenDocumentInfo> docs, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules)
@@ -100,30 +104,40 @@ namespace SSMS_EnvTabs
             var manualRulesSnapshot = manualRules;
             var groupToPathsSnapshot = groupToPaths;
             var targetPathsSnapshot = targetPaths;
+            int generation = Interlocked.Increment(ref writeGeneration);
 
             _ = System.Threading.Tasks.Task.Run(() =>
             {
-                try
+                lock (writeLock)
                 {
-                    if (targetPathsSnapshot.Count == 0)
+                    if (generation != Volatile.Read(ref writeGeneration))
                     {
+                        EnvTabsLog.Verbose("ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Skipped superseded write.");
                         return;
                     }
 
-                    string primaryPath = targetPathsSnapshot[0];
-                    string primaryContent = BuildConfigContent(primaryPath, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
-                    WriteIfChanged(primaryPath, primaryContent);
-
-                    for (int i = 1; i < targetPathsSnapshot.Count; i++)
+                    try
                     {
-                        string targetPath = targetPathsSnapshot[i];
-                        string newContent = BuildConfigContent(targetPath, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
-                        WriteIfChanged(targetPath, newContent);
+                        if (targetPathsSnapshot.Count == 0)
+                        {
+                            return;
+                        }
+
+                        string primaryPath = targetPathsSnapshot[0];
+                        string primaryContent = BuildConfigContent(primaryPath, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
+                        WriteIfChanged(primaryPath, primaryContent);
+
+                        for (int i = 1; i < targetPathsSnapshot.Count; i++)
+                        {
+                            string targetPath = targetPathsSnapshot[i];
+                            string newContent = BuildConfigContent(targetPath, groupToPathsSnapshot, rulesSnapshot, manualRulesSnapshot);
+                            WriteIfChanged(targetPath, newContent);
+                        }
                     }
-                }
-                catch (Exception ex)
-                {
-                    EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Background write failed: {ex.Message}");
+                    catch (Exception ex)
+                    {
+                        EnvTabsLog.Info($"ColorByRegexConfigWriter.cs::UpdateFromSnapshot - Background write failed: {ex.Message}");
+                    }
                 }
             });
         }
