@@ -7,12 +7,14 @@ using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace SSMS_EnvTabs
 {
@@ -24,6 +26,7 @@ namespace SSMS_EnvTabs
         private static readonly string[] editorMarginNames = { "Glyph", "LineNumber", "LeftSelection", "Indicator", "SpacerMargin" };
         private static readonly ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController> statusStripColorControllers = new ConditionalWeakTable<System.Windows.Forms.StatusStrip, StatusStripColorController>();
         private static readonly ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot> originalIndicatorBrushState = new ConditionalWeakTable<DependencyObject, IndicatorBrushSnapshot>();
+        private readonly Dictionary<IWpfTextView, LineIndicatorColorController> lineIndicatorControllers = new Dictionary<IWpfTextView, LineIndicatorColorController>();
 
         private IComponentModel componentModel;
         private IVsEditorAdaptersFactoryService editorAdaptersFactoryService;
@@ -41,13 +44,14 @@ namespace SSMS_EnvTabs
 
             if (settings?.EnableAutoColor != true)
             {
-                // Auto-color globally disabled: do not modify any indicator visuals.
+                TryRestoreLineIndicatorColor(frame);
                 return true;
             }
 
             if (!TryGetConnectionInfo(frame, out string server, out string database) || string.IsNullOrWhiteSpace(server))
             {
                 EnvTabsLog.Info($"LineIndicator: skipped (no connection info) cookie={docCookie} moniker='{moniker}'");
+                TryRestoreLineIndicatorColor(frame);
                 return true;
             }
 
@@ -71,25 +75,23 @@ namespace SSMS_EnvTabs
                 return true;
             }
 
-            if (!TryFindLineIndicatorElements(docCookie, frame, out List<DependencyObject> indicators) || indicators.Count == 0)
+            if (!TryGetActiveVsTextView(frame, out IVsTextView vsView, out _)
+                || !TryResolveWpfTextView(vsView, out IWpfTextViewHost host, out IWpfTextView view, out _)
+                || view == null || view.IsClosed)
             {
-                EnvTabsLog.Info($"LineIndicator: editor indicator not ready cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value}");
+                EnvTabsLog.Info($"LineIndicator: text view not ready cookie={docCookie}");
                 return false;
             }
 
-            Brush brush = BuildIndicatorBrush(colorIndex.Value);
-            int appliedCount = 0;
-            foreach (DependencyObject indicator in indicators)
+            if (!lineIndicatorControllers.TryGetValue(view, out LineIndicatorColorController controller))
             {
-                if (TrySetIndicatorBackground(indicator, brush))
-                {
-                    appliedCount++;
-                }
+                controller = new LineIndicatorColorController(this, view);
+                lineIndicatorControllers.Add(view, controller);
             }
 
-            EnvTabsLog.Info($"LineIndicator: target type='{DescribeIndicator(indicators[0])}'");
-            EnvTabsLog.Info($"LineIndicator: {(appliedCount > 0 ? "applied" : "failed")} cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value} indicators={indicators.Count} updated={appliedCount}");
-            return appliedCount > 0;
+            bool applied = controller.Apply(host, BuildIndicatorBrush(colorIndex.Value));
+            EnvTabsLog.Info($"LineIndicator: {(applied ? "applied" : "waiting for indicator")} cookie={docCookie} server='{server}' db='{database}' colorIndex={colorIndex.Value}");
+            return applied;
         }
 
         private void TryApplyStatusBarColor(uint docCookie, IVsWindowFrame frame, string moniker, IReadOnlyList<TabRuleMatcher.CompiledRule> rules, IReadOnlyList<TabRuleMatcher.CompiledManualRule> manualRules, TabGroupSettings settings)
@@ -847,14 +849,144 @@ namespace SSMS_EnvTabs
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            if (!TryFindLineIndicatorElements(0, frame, out List<DependencyObject> indicators) || indicators.Count == 0)
+            foreach (IWpfTextView view in GetFrameWpfTextViews(frame))
             {
-                return;
+                if (lineIndicatorControllers.TryGetValue(view, out LineIndicatorColorController controller))
+                {
+                    controller.Restore();
+                    lineIndicatorControllers.Remove(view);
+                }
+            }
+        }
+
+        private sealed class LineIndicatorColorController
+        {
+            private readonly RdtEventManager owner;
+            private readonly IWpfTextView view;
+            private IWpfTextViewHost host;
+            private Brush brush;
+            private DispatcherOperation pendingRefresh;
+            private bool attached;
+
+            public LineIndicatorColorController(RdtEventManager owner, IWpfTextView view)
+            {
+                this.owner = owner;
+                this.view = view;
             }
 
-            foreach (DependencyObject indicator in indicators)
+            public bool Apply(IWpfTextViewHost host, Brush brush)
             {
-                TryRestoreIndicatorBackground(indicator);
+                this.host = host;
+                this.brush = brush;
+                if (!attached)
+                {
+                    // Subscribe before searching: an off-screen caret may have no Indicator yet.
+                    view.LayoutChanged += OnViewChanged;
+                    view.Caret.PositionChanged += OnViewChanged;
+                    view.GotAggregateFocus += OnViewChanged;
+                    view.Closed += OnClosed;
+                    attached = true;
+                }
+
+                QueueRefresh();
+                return Refresh();
+            }
+
+            public void Restore()
+            {
+                brush = null;
+                pendingRefresh?.Abort();
+                pendingRefresh = null;
+                if (attached)
+                {
+                    view.LayoutChanged -= OnViewChanged;
+                    view.Caret.PositionChanged -= OnViewChanged;
+                    view.GotAggregateFocus -= OnViewChanged;
+                    view.Closed -= OnClosed;
+                    attached = false;
+                }
+
+                if (!view.IsClosed)
+                {
+                    foreach (DependencyObject indicator in FindIndicators())
+                    {
+                        TryRestoreIndicatorBackground(indicator);
+                    }
+                }
+            }
+
+            private List<DependencyObject> FindIndicators()
+            {
+                var roots = new List<DependencyObject>();
+                try
+                {
+                    if (host?.GetTextViewMargin("Indicator") is IWpfTextViewMargin margin)
+                    {
+                        TryAddUniqueRoot(margin.VisualElement, roots);
+                    }
+                }
+                catch
+                {
+                    // The margin can still be initializing; use the editor visuals below.
+                }
+
+                var indicators = new List<DependencyObject>();
+                CollectIndicatorControls(roots, indicators);
+                if (indicators.Count == 0)
+                {
+                    roots.Clear();
+                    TryAddEditorScopeRoots(host, view, roots);
+                    CollectIndicatorControls(roots, indicators);
+                }
+
+                return indicators;
+            }
+
+            private bool Refresh()
+            {
+                if (brush == null || view.IsClosed)
+                {
+                    return false;
+                }
+
+                bool applied = false;
+                foreach (DependencyObject indicator in FindIndicators())
+                {
+                    applied |= TrySetIndicatorBackground(indicator, brush);
+                }
+
+                return applied;
+            }
+
+            private void OnViewChanged(object sender, EventArgs e) => QueueRefresh();
+
+            [SuppressMessage("Usage", "VSTHRD001", Justification = "Already on the editor UI thread; defer to its dispatcher after layout, rather than switch threads.")]
+            private void QueueRefresh()
+            {
+                if (pendingRefresh != null || brush == null || view.IsClosed)
+                {
+                    return;
+                }
+
+                // ponytail: coalesce caret/layout events and let the editor create its visuals first.
+                pendingRefresh = view.VisualElement.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    pendingRefresh = null;
+                    try
+                    {
+                        Refresh();
+                    }
+                    catch (Exception ex)
+                    {
+                        EnvTabsLog.Error($"LineIndicator: deferred refresh failed: {ex.Message}");
+                    }
+                }));
+            }
+
+            private void OnClosed(object sender, EventArgs e)
+            {
+                Restore();
+                owner.lineIndicatorControllers.Remove(view);
             }
         }
 
@@ -925,18 +1057,6 @@ namespace SSMS_EnvTabs
             return false;
         }
 
-        private static string DescribeIndicator(DependencyObject indicator)
-        {
-            if (!(indicator is FrameworkElement fe))
-            {
-                return indicator?.GetType().FullName ?? "<null>";
-            }
-
-            string type = fe.GetType().FullName ?? fe.GetType().Name;
-            string name = fe.Name ?? string.Empty;
-            return $"{type} name='{name}' w={fe.ActualWidth:0.##} h={fe.ActualHeight:0.##}";
-        }
-
         private static bool IsIndicatorControl(DependencyObject candidate)
         {
             if (candidate == null)
@@ -948,115 +1068,6 @@ namespace SSMS_EnvTabs
             string typeName = candidate.GetType().Name ?? string.Empty;
             return string.Equals(typeFullName, IndicatorTypeFullName, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(typeName, IndicatorTypeName, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private bool TryFindLineIndicatorElements(uint docCookie, IVsWindowFrame frame, out List<DependencyObject> indicators)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            indicators = new List<DependencyObject>();
-            if (frame == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                if (docCookie != 0
-                    && lineIndicatorPreferEditorScopeByCookie.TryGetValue(docCookie, out bool preferEditorScope)
-                    && preferEditorScope)
-                {
-                    if (!TryResolveEditorScopedSearchRoots(frame, out List<DependencyObject> cachedRoots, out string cachedResolutionSource))
-                    {
-                        return false;
-                    }
-
-                    EnvTabsLog.Info($"LineIndicator: editor scope resolved via cached-fallback({cachedResolutionSource}) roots={cachedRoots.Count}");
-                    CollectIndicatorControls(cachedRoots, indicators);
-                    if (indicators.Count == 0)
-                    {
-                        lineIndicatorPreferEditorScopeByCookie.Remove(docCookie);
-                    }
-                    else
-                    {
-                        EnvTabsLog.Info($"LineIndicator: editor scope discovered {indicators.Count} gutter candidate(s).");
-                        return true;
-                    }
-                }
-
-                if (!TryResolveIndicatorSearchRoots(frame, out List<DependencyObject> roots, out string resolutionSource))
-                {
-                    return false;
-                }
-
-                EnvTabsLog.Info($"LineIndicator: editor scope resolved via {resolutionSource} roots={roots.Count}");
-
-                CollectIndicatorControls(roots, indicators);
-
-                if (indicators.Count == 0
-                    && TryResolveEditorScopedSearchRoots(frame, out List<DependencyObject> fallbackRoots, out string fallbackResolutionSource))
-                {
-                    CollectIndicatorControls(fallbackRoots, indicators);
-                    if (indicators.Count > 0)
-                    {
-                        if (docCookie != 0)
-                        {
-                            lineIndicatorPreferEditorScopeByCookie[docCookie] = true;
-                        }
-
-                        resolutionSource = resolutionSource + " -> fallback(" + fallbackResolutionSource + ")";
-                        EnvTabsLog.Info($"LineIndicator: exact indicator margin was empty; fallback editor scope found candidates via {fallbackResolutionSource} roots={fallbackRoots.Count}");
-                    }
-                }
-
-                if (indicators.Count > 0 && docCookie != 0)
-                {
-                    lineIndicatorPreferEditorScopeByCookie.Remove(docCookie);
-                }
-
-                if (indicators.Count == 0)
-                {
-                    EnvTabsLog.Info($"LineIndicator: editor scope resolved but no gutter candidates were found via {resolutionSource}.");
-                    return false;
-                }
-
-                EnvTabsLog.Info($"LineIndicator: editor scope discovered {indicators.Count} gutter candidate(s).");
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool TryResolveEditorScopedSearchRoots(IVsWindowFrame frame, out List<DependencyObject> roots, out string resolutionSource)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            roots = new List<DependencyObject>();
-            resolutionSource = null;
-
-            if (!TryGetActiveVsTextView(frame, out IVsTextView vsTextView, out string textViewSource))
-            {
-                resolutionSource = textViewSource ?? "no-active-vstextview";
-                return false;
-            }
-
-            if (!TryResolveWpfTextView(vsTextView, out IWpfTextViewHost textViewHost, out IWpfTextView wpfTextView, out string wpfSource))
-            {
-                resolutionSource = $"{textViewSource}; {wpfSource}";
-                return false;
-            }
-
-            TryAddEditorScopeRoots(textViewHost, wpfTextView, roots);
-            if (roots.Count == 0)
-            {
-                resolutionSource = $"{textViewSource}; {wpfSource}; no-editor-roots";
-                return false;
-            }
-
-            resolutionSource = $"{textViewSource}; {wpfSource}";
-            return true;
         }
 
         private bool TryGetActiveVsTextView(IVsWindowFrame frame, out IVsTextView textView, out string source)
@@ -1084,55 +1095,6 @@ namespace SSMS_EnvTabs
 
             source = "no-vstextview-from-frame";
             return false;
-        }
-
-        private bool TryResolveIndicatorSearchRoots(IVsWindowFrame frame, out List<DependencyObject> roots, out string resolutionSource)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            roots = new List<DependencyObject>();
-            resolutionSource = null;
-
-            if (!TryGetActiveVsTextView(frame, out IVsTextView vsTextView, out string textViewSource))
-            {
-                resolutionSource = textViewSource ?? "no-active-vstextview";
-                return false;
-            }
-
-            if (!TryResolveWpfTextView(vsTextView, out IWpfTextViewHost textViewHost, out IWpfTextView wpfTextView, out string wpfSource))
-            {
-                resolutionSource = $"{textViewSource}; {wpfSource}";
-                return false;
-            }
-
-            if (textViewHost != null)
-            {
-                try
-                {
-                    if (textViewHost.GetTextViewMargin("Indicator") is IWpfTextViewMargin indicatorMargin)
-                    {
-                        TryAddUniqueRoot(indicatorMargin.VisualElement, roots);
-                    }
-                }
-                catch
-                {
-                    // Ignore margin access failures and fall back to text view visuals.
-                }
-            }
-
-            if (roots.Count == 0 && wpfTextView != null)
-            {
-                TryAddUniqueRoot(wpfTextView.VisualElement, roots);
-            }
-
-            if (roots.Count == 0)
-            {
-                resolutionSource = $"{textViewSource}; {wpfSource}; no-indicator-roots";
-                return false;
-            }
-
-            resolutionSource = $"{textViewSource}; {wpfSource}; exact-indicator-margin";
-            return true;
         }
 
         private bool TryGetVsTextViewFromFrameProperty(IVsWindowFrame frame, int propertyId, string propertyLabel, out IVsTextView textView, out string source)

@@ -30,7 +30,6 @@ namespace SSMS_EnvTabs
 
         private readonly Dictionary<uint, int> renameRetryCounts = new Dictionary<uint, int>();
         private readonly Dictionary<uint, int> lineIndicatorRetryCounts = new Dictionary<uint, int>();
-        private readonly Dictionary<uint, bool> lineIndicatorPreferEditorScopeByCookie = new Dictionary<uint, bool>();
         private readonly Dictionary<uint, (string Server, string Database)> lastConnectionByCookie = new Dictionary<uint, (string Server, string Database)>();
         private readonly Dictionary<uint, string> lastCaptionByCookie = new Dictionary<uint, string>();
         private FileSystemWatcher configWatcher;
@@ -171,7 +170,11 @@ namespace SSMS_EnvTabs
                 groupColorDebounceCts?.Cancel();
                 groupColorDebounceCts?.Dispose();
                 lineIndicatorRetryCounts.Clear();
-                lineIndicatorPreferEditorScopeByCookie.Clear();
+                foreach (LineIndicatorColorController controller in lineIndicatorControllers.Values)
+                {
+                    controller.Restore();
+                }
+                lineIndicatorControllers.Clear();
             }
             catch (Exception ex)
             {
